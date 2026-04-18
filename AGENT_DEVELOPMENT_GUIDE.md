@@ -813,11 +813,11 @@ Track overall progress here. Each agent should mark items complete as they finis
 - [x] Frontend Dockerfile + nginx serves React SPA with correct routing — multi-stage build + nginx.conf with SPA fallback
 
 ### Backend — Data Layer
-- [ ] All 12 Mongoose models defined with correct indexes
-- [ ] Redis client connected with retry logic
-- [ ] MongoDB connected
-- [ ] Custom AppError hierarchy in place
-- [ ] Global Express error handler returns structured JSON
+- [x] All 12 Mongoose models defined with correct indexes — implemented in src/models/ matching TECHNICAL_SPEC.md §4
+- [x] Redis client connected with retry logic — singleton with exponential backoff in src/lib/redis.ts
+- [x] MongoDB connected — src/lib/mongo.ts; autoIndex=true in dev, false in prod
+- [x] Custom AppError hierarchy in place — AppError, BadRequest, Unauthorized, Forbidden, NotFound, Conflict in src/lib/errors.ts
+- [x] Global Express error handler returns structured JSON — registered in src/index.ts; returns { error: message }
 
 ### Backend — Auth
 - [ ] Registration with unique email + username
