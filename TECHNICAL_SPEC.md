@@ -1,9 +1,11 @@
 # Technical Specification — Online Chat Server
 
-**Version:** 2.0  
+**Version:** 2.1  
 **Based on:** AI_herders_jam_-_requirements_v3.docx  
 **Stack:** React · TypeScript · Node.js · MongoDB  
 **Target audience:** Implementation agent
+
+> **Changelog v2.1:** Fixed truncated API table rows; corrected architecture diagram (no standalone nginx proxy); added `nginx.conf` spec; expanded access control table with remove-member = ban and owner-cannot-leave rules; clarified sidebar layout naming (see §13 note).
 
 ---
 
@@ -45,16 +47,21 @@ Build a classic web-based real-time chat application. The system must support up
 
 ```
 Browser (React + Vite SPA)
-    │  REST (HTTP/S)   Socket.IO (WSS)
-    ▼
-[Nginx  —  reverse proxy]
     │
-    ├── [Express API server  ◄──► MongoDB]
-    │         │
-    │         └──► [Redis]  (Socket.IO adapter, presence hash, session TTLs)
+    ├── REST (HTTP)  →  Express API  (port 3001)
+    │                        │
+    │                        ├──► MongoDB (port 27017)
+    │                        │
+    │                        └──► Redis   (port 6379)
+    │                               └── Socket.IO adapter, presence hash, session TTLs
     │
-    └── /uploads  (Docker volume, local FS)
+    ├── Socket.IO (WS)  →  Express API  (port 3001, same server)
+    │
+    └── Static assets  →  Frontend container (Nginx, port 3000)
+                             └── /uploads volume (Docker-managed local FS)
 ```
+
+> **Note on Nginx:** There is **no** standalone Nginx reverse-proxy service in the docker-compose setup. The `frontend` service runs Nginx solely to serve the compiled React SPA static files. The browser talks to the Express API directly on port 3001. If a production reverse proxy is ever needed, add an `nginx` service to docker-compose and update this diagram.
 
 All services defined in `docker-compose.yml`. No Kubernetes required.
 
@@ -322,7 +329,7 @@ All endpoints prefixed with `/api/v1`. Authentication via `Authorization: Bearer
 | GET    | `/contacts`              | Friend list with current presence                |
 | POST   | `/contacts/request`      | `{ toUsername, message? }` — send friend request |
 | GET    | `/contacts/requests`     | Pending incoming requests                        |
-| PUT    | `/contacts/requests/:id` | `{ action: 'accept'                              |
+| PUT    | `/contacts/requests/:id` | `{ action: 'accept' \| 'reject' }` — respond to incoming request |
 | DELETE | `/contacts/:userId`      | Remove friend                                    |
 | POST   | `/contacts/ban/:userId`  | Ban a user                                       |
 | DELETE | `/contacts/ban/:userId`  | Unban a user                                     |
@@ -347,7 +354,7 @@ All endpoints prefixed with `/api/v1`. Authentication via `Authorization: Bearer
 | DELETE | `/rooms/:id/ban/:userId`        | Unban                                          |
 | GET    | `/rooms/:id/bans`               | List bans (admins/owner)                       |
 | POST   | `/rooms/:id/invitations`        | `{ username }` invite to private room          |
-| PUT    | `/rooms/:id/invitations/:invId` | `{ action: 'accept'                            |
+| PUT    | `/rooms/:id/invitations/:invId` | `{ action: 'accept' \| 'reject' }` — respond to invitation |
 
 
 ### 5.5 Messages
@@ -546,19 +553,21 @@ A user becomes `offline` only when:
 ## 11. Access Control Rules Summary
 
 
-| Action                 | Allowed by                                                        |
-| ---------------------- | ----------------------------------------------------------------- |
-| Send personal message  | Friends only, neither side has banned the other                   |
-| Join public room       | Any authenticated user not room-banned                            |
-| Join private room      | Invitation only                                                   |
-| Edit message           | Author only                                                       |
-| Delete message         | Author **or** room admin/owner (room messages); author only (DMs) |
-| Promote / demote admin | Room owner                                                        |
-| Ban from room          | Room admin or owner                                               |
-| Unban from room        | Room admin or owner                                               |
-| Delete room            | Room owner only                                                   |
-| Download attachment    | Current room member or dialog participant                         |
-| View room ban list     | Room admins and owner                                             |
+| Action                       | Allowed by                                                        |
+| ---------------------------- | ----------------------------------------------------------------- |
+| Send personal message        | Friends only, neither side has banned the other                   |
+| Join public room             | Any authenticated user not room-banned                            |
+| Join private room            | Invitation only                                                   |
+| Edit message                 | Author only                                                       |
+| Delete message               | Author **or** room admin/owner (room messages); author only (DMs) |
+| Promote / demote admin       | Room owner                                                        |
+| Ban from room                | Room admin or owner                                               |
+| Remove member from room      | Room admin or owner — **treated as a ban** (user is removed and cannot rejoin until unbanned) |
+| Unban from room              | Room admin or owner                                               |
+| Delete room                  | Room owner only                                                   |
+| Owner leave room             | **Not allowed** — returns `400 Bad Request`                       |
+| Download attachment          | Current room member or dialog participant                         |
+| View room ban list           | Room admins and owner                                             |
 
 
 ---
@@ -628,7 +637,9 @@ const messages = await Message.find(query)
 
 ## 13. UI Layout Specification
 
-Following the wireframes in the requirements:
+Following the wireframes in the requirements.
+
+> **Sidebar naming note:** The requirements document (§4.1.1) states "Rooms and contacts are displayed on the right." However, the wireframe in Appendix A of the same document visually positions the rooms+contacts panel as the **leftmost** column (despite mislabeling it "RIGHT SIDEBAR" in the wireframe label). The visual wireframe position takes precedence. Implement rooms+contacts as the **left** sidebar and members/context as the **right** sidebar, consistent with standard chat UX conventions and the layout below.
 
 ### 13.1 Unauthenticated screens
 
@@ -778,6 +789,30 @@ FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
+```
+
+### nginx.conf (frontend/nginx.conf)
+
+```nginx
+server {
+  listen 80;
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Serve static assets with cache headers
+  location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    try_files $uri =404;
+  }
+
+  # All other routes → SPA entry point (client-side routing)
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
 ```
 
 ---
