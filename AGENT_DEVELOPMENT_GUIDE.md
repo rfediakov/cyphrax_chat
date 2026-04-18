@@ -808,9 +808,9 @@ Add two new pages, accessible only to authenticated users from the TopNav:
 Track overall progress here. Each agent should mark items complete as they finish.
 
 ### Infrastructure
-- [ ] `docker compose up` starts all services from a fresh clone
-- [ ] Backend Dockerfile multi-stage build works
-- [ ] Frontend Dockerfile + nginx serves React SPA with correct routing
+- [x] `docker compose up` starts all services from a fresh clone — scaffolded by Phase 1 Scaffolding Agent
+- [x] Backend Dockerfile multi-stage build works — multi-stage node:20-alpine → node:20-alpine per spec §15
+- [x] Frontend Dockerfile + nginx serves React SPA with correct routing — multi-stage build + nginx.conf with SPA fallback
 
 ### Backend — Data Layer
 - [ ] All 12 Mongoose models defined with correct indexes

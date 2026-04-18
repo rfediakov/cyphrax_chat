@@ -1,0 +1,48 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: chat
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/chat
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: change_me_in_production
+      JWT_REFRESH_SECRET: change_me_too
+      PORT: 3001
+    volumes:
+      - uploads:/uploads
+    depends_on:
+      - mongo
+      - redis
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  mongo_data:
+  uploads:
