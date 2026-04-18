@@ -1,8 +1,11 @@
 # Technical Specification — Online Chat Server
 
-**Version:** 1.0  
+**Version:** 2.1  
 **Based on:** AI_herders_jam_-_requirements_v3.docx  
+**Stack:** React · TypeScript · Node.js · MongoDB  
 **Target audience:** Implementation agent
+
+> **Changelog v2.1:** Fixed truncated API table rows; corrected architecture diagram (no standalone nginx proxy); added `nginx.conf` spec; expanded access control table with remove-member = ban and owner-cannot-leave rules; clarified sidebar layout naming (see §13 note).
 
 ---
 
@@ -12,442 +15,634 @@ Build a classic web-based real-time chat application. The system must support up
 
 ---
 
-## 2. Recommended Technology Stack
+## 2. Technology Stack
 
-| Layer | Choice | Rationale |
-|---|---|---|
-| Backend language | **Node.js (TypeScript)** or **Python (FastAPI)** | Wide ecosystem for WebSockets, JWT, XMPP libs |
-| Real-time transport | **WebSocket** (via `ws` / `socket.io` / `websockets`) | Required for presence and live messaging |
-| HTTP framework | **Express** (Node) / **FastAPI** (Python) | REST endpoints for auth, rooms, history |
-| Database | **PostgreSQL** | Relational data with good JSON support |
-| ORM | **Prisma** (Node) / **SQLAlchemy** (Python) | Schema migrations, type safety |
-| File storage | **Local filesystem** (`/uploads` volume) | Per spec §3.4 |
-| Session/Auth | **JWT** (access + refresh) stored in HttpOnly cookies | Persistent login across browser close |
-| Presence/pub-sub | **Redis** | Coordinating multi-tab presence, pub/sub for WS message fan-out |
-| Containerisation | **Docker + docker-compose** | Required by submission rules |
-| Frontend | **React + TypeScript + Vite** | Fast SPA, easy WS integration |
-| UI components | **Tailwind CSS + shadcn/ui** or **Chakra UI** | Mobile-first layout |
 
-> **If implementing Jabber (advanced):** use `node-xmpp-server` (Node) or `slixmpp`/`aioxmpp` (Python) for the XMPP layer.
+| Layer                  | Choice                                         | Version / Notes                               |
+| ---------------------- | ---------------------------------------------- | --------------------------------------------- |
+| Backend runtime        | **Node.js**                                    | ≥ 20 LTS                                      |
+| Backend language       | **TypeScript**                                 | ≥ 5.x, strict mode on                         |
+| HTTP framework         | **Express**                                    | v4 or v5                                      |
+| Real-time transport    | **Socket.IO**                                  | v4 — handles WS + fallback, rooms, namespaces |
+| Database               | **MongoDB**                                    | 7.x                                           |
+| ODM                    | **Mongoose**                                   | v8 — schemas, validation, middleware hooks    |
+| File storage           | **Local filesystem** (`/uploads` volume)       | Per spec §3.4                                 |
+| File upload middleware | **Multer**                                     | Size limits enforced before write             |
+| Session/Auth           | **JWT** (access + refresh) in HttpOnly cookies | `jsonwebtoken` + `bcrypt`                     |
+| Presence / pub-sub     | **Redis**                                      | 7.x — multi-tab presence, Socket.IO adapter   |
+| Socket.IO adapter      | `**@socket.io/redis-adapter`**                 | Fan-out across multiple API instances         |
+| Containerisation       | **Docker + docker-compose**                    | Required by submission rules                  |
+| Frontend               | **React + TypeScript + Vite**                  | v18 + Vite 5                                  |
+| Frontend state         | **Zustand** or **React Context**               | Lightweight; no Redux overhead needed         |
+| UI components          | **Tailwind CSS**                               | Mobile-first utility classes                  |
+| API client             | **Axios** + **socket.io-client**               |                                               |
+| Linting / formatting   | **ESLint + Prettier**                          | Shared config across frontend and backend     |
+
+
+> **If implementing Jabber (advanced):** use `node-xmpp-server` npm package or a **Prosody** sidecar container bridged via external auth.
 
 ---
 
 ## 3. Architecture
 
 ```
-Browser (React SPA)
-    │  REST (HTTP/S)   WebSocket (WSS)
-    ▼
-[Nginx reverse proxy / gateway]
+Browser (React + Vite SPA)
     │
-    ├── [Chat API server]  ◄──► [PostgreSQL]
-    │        │
-    │        └──► [Redis]  (pub/sub, presence, session store)
+    ├── REST (HTTP)  →  Express API  (port 3001)
+    │                        │
+    │                        ├──► MongoDB (port 27017)
+    │                        │
+    │                        └──► Redis   (port 6379)
+    │                               └── Socket.IO adapter, presence hash, session TTLs
     │
-    └── [Static file server / upload endpoint]
-              │
-              └── /uploads volume (local FS)
+    ├── Socket.IO (WS)  →  Express API  (port 3001, same server)
+    │
+    └── Static assets  →  Frontend container (Nginx, port 3000)
+                             └── /uploads volume (Docker-managed local FS)
 ```
+
+> **Note on Nginx:** There is **no** standalone Nginx reverse-proxy service in the docker-compose setup. The `frontend` service runs Nginx solely to serve the compiled React SPA static files. The browser talks to the Express API directly on port 3001. If a production reverse proxy is ever needed, add an `nginx` service to docker-compose and update this diagram.
 
 All services defined in `docker-compose.yml`. No Kubernetes required.
 
 ---
 
-## 4. Database Schema
+## 4. MongoDB Collections & Mongoose Schemas
 
-### 4.1 Users
+All `_id` fields are MongoDB `ObjectId` (Mongoose default). Timestamps (`createdAt`, `updatedAt`) are enabled via `{ timestamps: true }` on every schema.
 
-```sql
-users (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email         TEXT UNIQUE NOT NULL,
-  username      TEXT UNIQUE NOT NULL,  -- immutable
-  password_hash TEXT NOT NULL,
-  created_at    TIMESTAMPTZ DEFAULT now(),
-  deleted_at    TIMESTAMPTZ            -- soft-delete marker
-)
+> **Important:** MongoDB does not enforce referential integrity. All cascade deletes must be handled in application-layer service code or Mongoose `post('deleteOne')` / `post('deleteMany')` middleware hooks.
+
+---
+
+### 4.1 `users`
+
+```ts
+const UserSchema = new Schema({
+  email:        { type: String, required: true, unique: true, lowercase: true, trim: true },
+  username:     { type: String, required: true, unique: true, trim: true },  // immutable
+  passwordHash: { type: String, required: true },
+  deletedAt:    { type: Date, default: null },   // soft-delete
+}, { timestamps: true });
+
+UserSchema.index({ username: 1 });
+UserSchema.index({ email: 1 });
 ```
 
-### 4.2 Sessions
+`username` is immutable — reject any PUT/PATCH that attempts to change it.
 
-```sql
-sessions (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
-  token_hash  TEXT NOT NULL,           -- hashed refresh token
-  user_agent  TEXT,
-  ip_address  TEXT,
-  created_at  TIMESTAMPTZ DEFAULT now(),
-  expires_at  TIMESTAMPTZ NOT NULL,
-  revoked_at  TIMESTAMPTZ
-)
+---
+
+### 4.2 `sessions`
+
+```ts
+const SessionSchema = new Schema({
+  userId:     { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  tokenHash:  { type: String, required: true },   // SHA-256 of the refresh token
+  userAgent:  String,
+  ipAddress:  String,
+  expiresAt:  { type: Date, required: true },
+  revokedAt:  { type: Date, default: null },
+}, { timestamps: true });
+
+SessionSchema.index({ userId: 1 });
+SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL auto-purge
 ```
 
-### 4.3 Friends / Contacts
+---
 
-```sql
-friend_requests (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  from_user   UUID REFERENCES users(id) ON DELETE CASCADE,
-  to_user     UUID REFERENCES users(id) ON DELETE CASCADE,
-  message     TEXT,
-  status      TEXT CHECK (status IN ('pending','accepted','rejected')),
-  created_at  TIMESTAMPTZ DEFAULT now(),
-  UNIQUE (from_user, to_user)
-)
+### 4.3 `friendrequests`
 
-user_bans (
-  blocker_id  UUID REFERENCES users(id) ON DELETE CASCADE,
-  blocked_id  UUID REFERENCES users(id) ON DELETE CASCADE,
-  created_at  TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (blocker_id, blocked_id)
-)
+```ts
+const FriendRequestSchema = new Schema({
+  fromUser: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  toUser:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  message:  { type: String, default: '' },
+  status:   { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+}, { timestamps: true });
+
+FriendRequestSchema.index({ fromUser: 1, toUser: 1 }, { unique: true });
+FriendRequestSchema.index({ toUser: 1, status: 1 });
 ```
 
-### 4.4 Rooms
+---
 
-```sql
-rooms (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        TEXT UNIQUE NOT NULL,
-  description TEXT,
-  visibility  TEXT CHECK (visibility IN ('public','private')) DEFAULT 'public',
-  owner_id    UUID REFERENCES users(id),
-  created_at  TIMESTAMPTZ DEFAULT now()
-)
+### 4.4 `userbans`
 
-room_members (
-  room_id     UUID REFERENCES rooms(id) ON DELETE CASCADE,
-  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
-  role        TEXT CHECK (role IN ('member','admin')) DEFAULT 'member',
-  joined_at   TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (room_id, user_id)
-)
+```ts
+const UserBanSchema = new Schema({
+  blockerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  blockedId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+}, { timestamps: true });
 
-room_bans (
-  room_id     UUID REFERENCES rooms(id) ON DELETE CASCADE,
-  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
-  banned_by   UUID REFERENCES users(id),
-  banned_at   TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (room_id, user_id)
-)
-
-room_invitations (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_id     UUID REFERENCES rooms(id) ON DELETE CASCADE,
-  invited_by  UUID REFERENCES users(id),
-  invited_user UUID REFERENCES users(id),
-  created_at  TIMESTAMPTZ DEFAULT now(),
-  status      TEXT CHECK (status IN ('pending','accepted','rejected'))
-)
+UserBanSchema.index({ blockerId: 1, blockedId: 1 }, { unique: true });
 ```
 
-### 4.5 Messages
+---
 
-```sql
-messages (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_id       UUID REFERENCES rooms(id) ON DELETE CASCADE,  -- NULL = personal DM
-  dialog_id     UUID REFERENCES dialogs(id) ON DELETE CASCADE, -- NULL = room msg
-  author_id     UUID REFERENCES users(id),
-  content       TEXT CHECK (length(content) <= 3072),  -- 3 KB UTF-8
-  reply_to_id   UUID REFERENCES messages(id),
-  edited_at     TIMESTAMPTZ,
-  deleted_at    TIMESTAMPTZ,
-  created_at    TIMESTAMPTZ DEFAULT now()
-)
--- Index for pagination
-CREATE INDEX idx_messages_room_created ON messages(room_id, created_at DESC);
-CREATE INDEX idx_messages_dialog_created ON messages(dialog_id, created_at DESC);
+### 4.5 `rooms`
+
+```ts
+const RoomSchema = new Schema({
+  name:        { type: String, required: true, unique: true, trim: true },
+  description: { type: String, default: '' },
+  visibility:  { type: String, enum: ['public', 'private'], default: 'public' },
+  ownerId:     { type: Schema.Types.ObjectId, ref: 'User', required: true },
+}, { timestamps: true });
+
+RoomSchema.index({ name: 'text', description: 'text' }); // full-text search for catalog
+RoomSchema.index({ visibility: 1 });
 ```
 
-### 4.6 Personal Dialogs
+---
 
-```sql
-dialogs (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_a      UUID REFERENCES users(id) ON DELETE CASCADE,
-  user_b      UUID REFERENCES users(id) ON DELETE CASCADE,
-  created_at  TIMESTAMPTZ DEFAULT now(),
-  UNIQUE (LEAST(user_a::text, user_b::text), GREATEST(user_a::text, user_b::text))
-)
+### 4.6 `roommembers`
+
+```ts
+const RoomMemberSchema = new Schema({
+  roomId:   { type: Schema.Types.ObjectId, ref: 'Room', required: true },
+  userId:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  role:     { type: String, enum: ['member', 'admin'], default: 'member' },
+  joinedAt: { type: Date, default: Date.now },
+}, { timestamps: false });
+
+RoomMemberSchema.index({ roomId: 1, userId: 1 }, { unique: true });
+RoomMemberSchema.index({ userId: 1 });
 ```
 
-### 4.7 Attachments
+---
 
-```sql
-attachments (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  message_id    UUID REFERENCES messages(id) ON DELETE CASCADE,
-  uploader_id   UUID REFERENCES users(id),
-  original_name TEXT NOT NULL,
-  stored_path   TEXT NOT NULL,          -- relative path under /uploads
-  mime_type     TEXT,
-  file_size     BIGINT,
-  comment       TEXT,
-  created_at    TIMESTAMPTZ DEFAULT now()
-)
+### 4.7 `roombans`
+
+```ts
+const RoomBanSchema = new Schema({
+  roomId:   { type: Schema.Types.ObjectId, ref: 'Room', required: true },
+  userId:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  bannedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  bannedAt: { type: Date, default: Date.now },
+}, { timestamps: false });
+
+RoomBanSchema.index({ roomId: 1, userId: 1 }, { unique: true });
 ```
 
-### 4.8 Unread Tracking
+---
 
-```sql
-last_read (
-  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
-  room_id     UUID,    -- NULL if dialog
-  dialog_id   UUID,
-  last_read_at TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (user_id, COALESCE(room_id, dialog_id))
-)
+### 4.8 `roominvitations`
+
+```ts
+const RoomInvitationSchema = new Schema({
+  roomId:      { type: Schema.Types.ObjectId, ref: 'Room', required: true },
+  invitedBy:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  invitedUser: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  status:      { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+}, { timestamps: true });
+
+RoomInvitationSchema.index({ roomId: 1, invitedUser: 1 });
+RoomInvitationSchema.index({ invitedUser: 1, status: 1 });
+```
+
+---
+
+### 4.9 `dialogs`
+
+A personal chat between exactly two users. Create on first DM attempt; reuse if it already exists.
+
+```ts
+const DialogSchema = new Schema({
+  participants: {
+    type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    validate: (v: unknown[]) => v.length === 2,
+  },
+}, { timestamps: true });
+
+// Enforce uniqueness: sort participant IDs before saving
+DialogSchema.index({ participants: 1 }, { unique: true });
+```
+
+To find or create a dialog between two users:
+
+```ts
+const sorted = [userAId, userBId].sort().map(String);
+const dialog = await Dialog.findOneAndUpdate(
+  { participants: { $all: sorted, $size: 2 } },
+  { $setOnInsert: { participants: sorted } },
+  { upsert: true, new: true }
+);
+```
+
+---
+
+### 4.10 `messages`
+
+```ts
+const MessageSchema = new Schema({
+  // Exactly one of roomId or dialogId must be set
+  roomId:    { type: Schema.Types.ObjectId, ref: 'Room',   default: null },
+  dialogId:  { type: Schema.Types.ObjectId, ref: 'Dialog', default: null },
+  authorId:  { type: Schema.Types.ObjectId, ref: 'User',   required: true },
+  content:   {
+    type: String,
+    required: true,
+    maxlength: 3072,   // 3 KB — validated in bytes in service layer
+  },
+  replyToId: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
+  editedAt:  { type: Date, default: null },
+  deletedAt: { type: Date, default: null },
+}, { timestamps: true });
+
+MessageSchema.index({ roomId: 1, createdAt: -1 });
+MessageSchema.index({ dialogId: 1, createdAt: -1 });
+```
+
+---
+
+### 4.11 `attachments`
+
+```ts
+const AttachmentSchema = new Schema({
+  messageId:    { type: Schema.Types.ObjectId, ref: 'Message', required: true },
+  uploaderId:   { type: Schema.Types.ObjectId, ref: 'User',    required: true },
+  originalName: { type: String, required: true },
+  storedPath:   { type: String, required: true },   // relative to /uploads
+  mimeType:     { type: String },
+  fileSize:     { type: Number },                   // bytes
+  comment:      { type: String, default: '' },
+}, { timestamps: true });
+
+AttachmentSchema.index({ messageId: 1 });
+```
+
+---
+
+### 4.12 `lastread`
+
+```ts
+const LastReadSchema = new Schema({
+  userId:     { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  // Exactly one of roomId or dialogId
+  roomId:     { type: Schema.Types.ObjectId, ref: 'Room',   default: null },
+  dialogId:   { type: Schema.Types.ObjectId, ref: 'Dialog', default: null },
+  lastReadAt: { type: Date, default: Date.now },
+}, { timestamps: false });
+
+LastReadSchema.index({ userId: 1, roomId: 1 }, { sparse: true });
+LastReadSchema.index({ userId: 1, dialogId: 1 }, { sparse: true });
 ```
 
 ---
 
 ## 5. REST API
 
-All endpoints are prefixed with `/api/v1`. Authentication uses JWT access token in `Authorization: Bearer <token>` header (or HttpOnly cookie for browser clients).
+All endpoints prefixed with `/api/v1`. Authentication via `Authorization: Bearer <accessToken>` header or HttpOnly cookie. All IDs are MongoDB ObjectId strings.
 
 ### 5.1 Auth
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/auth/register` | Create account (email, username, password) |
-| POST | `/auth/login` | Sign in → returns access + refresh tokens |
-| POST | `/auth/logout` | Invalidate current session |
-| POST | `/auth/refresh` | Exchange refresh token for new access token |
-| POST | `/auth/password/reset-request` | Send reset link email |
-| POST | `/auth/password/reset` | Set new password via reset token |
-| PUT | `/auth/password/change` | Change password (authenticated) |
-| DELETE | `/auth/account` | Delete own account |
+
+| Method | Path                           | Description                                                       |
+| ------ | ------------------------------ | ----------------------------------------------------------------- |
+| POST   | `/auth/register`               | Create account `{ email, username, password }`                    |
+| POST   | `/auth/login`                  | Sign in → sets HttpOnly refresh cookie, returns `{ accessToken }` |
+| POST   | `/auth/logout`                 | Revoke current session                                            |
+| POST   | `/auth/refresh`                | Exchange refresh cookie → new `{ accessToken }`                   |
+| POST   | `/auth/password/reset-request` | `{ email }` → send reset link                                     |
+| POST   | `/auth/password/reset`         | `{ token, newPassword }`                                          |
+| PUT    | `/auth/password/change`        | `{ currentPassword, newPassword }` (authenticated)                |
+| DELETE | `/auth/account`                | Delete own account                                                |
+
 
 ### 5.2 Sessions
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/sessions` | List active sessions (browser, IP) |
-| DELETE | `/sessions/:id` | Revoke a session |
+
+| Method | Path            | Description                                                      |
+| ------ | --------------- | ---------------------------------------------------------------- |
+| GET    | `/sessions`     | List active sessions `[{ id, userAgent, ipAddress, createdAt }]` |
+| DELETE | `/sessions/:id` | Revoke a specific session                                        |
+
 
 ### 5.3 Users & Contacts
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/users/me` | Get own profile |
-| GET | `/users/search?q=` | Search users by username |
-| GET | `/contacts` | Get friend list with presence |
-| POST | `/contacts/request` | Send friend request `{ to_username, message? }` |
-| GET | `/contacts/requests` | Pending incoming requests |
-| PUT | `/contacts/requests/:id` | Accept / reject request `{ action }` |
-| DELETE | `/contacts/:userId` | Remove friend |
-| POST | `/contacts/ban/:userId` | Ban user |
-| DELETE | `/contacts/ban/:userId` | Unban user |
+
+| Method | Path                     | Description                                      |
+| ------ | ------------------------ | ------------------------------------------------ |
+| GET    | `/users/me`              | Own profile                                      |
+| GET    | `/users/search?q=`       | Search users by username (prefix match)          |
+| GET    | `/contacts`              | Friend list with current presence                |
+| POST   | `/contacts/request`      | `{ toUsername, message? }` — send friend request |
+| GET    | `/contacts/requests`     | Pending incoming requests                        |
+| PUT    | `/contacts/requests/:id` | `{ action: 'accept' \| 'reject' }` — respond to incoming request |
+| DELETE | `/contacts/:userId`      | Remove friend                                    |
+| POST   | `/contacts/ban/:userId`  | Ban a user                                       |
+| DELETE | `/contacts/ban/:userId`  | Unban a user                                     |
+
 
 ### 5.4 Rooms
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/rooms/public?q=` | List/search public rooms |
-| POST | `/rooms` | Create room `{ name, description, visibility }` |
-| GET | `/rooms/:id` | Get room details |
-| PUT | `/rooms/:id` | Update room settings (owner only) |
-| DELETE | `/rooms/:id` | Delete room (owner only) |
-| POST | `/rooms/:id/join` | Join public room |
-| DELETE | `/rooms/:id/leave` | Leave room |
-| GET | `/rooms/:id/members` | List members with roles and statuses |
-| POST | `/rooms/:id/admins/:userId` | Promote to admin |
-| DELETE | `/rooms/:id/admins/:userId` | Remove admin |
-| POST | `/rooms/:id/ban/:userId` | Ban user from room |
-| DELETE | `/rooms/:id/ban/:userId` | Unban user |
-| GET | `/rooms/:id/bans` | List room bans |
-| POST | `/rooms/:id/invitations` | Invite user to private room `{ username }` |
-| PUT | `/rooms/:id/invitations/:invId` | Accept/reject invitation |
+
+| Method | Path                            | Description                                    |
+| ------ | ------------------------------- | ---------------------------------------------- |
+| GET    | `/rooms/public?q=&page=`        | Search/list public rooms (text search)         |
+| POST   | `/rooms`                        | `{ name, description, visibility }`            |
+| GET    | `/rooms/:id`                    | Room details                                   |
+| PUT    | `/rooms/:id`                    | Update name / description / visibility (owner) |
+| DELETE | `/rooms/:id`                    | Delete room (owner)                            |
+| POST   | `/rooms/:id/join`               | Join public room                               |
+| DELETE | `/rooms/:id/leave`              | Leave room                                     |
+| GET    | `/rooms/:id/members`            | Members list with roles and presence           |
+| POST   | `/rooms/:id/admins/:userId`     | Promote to admin (owner)                       |
+| DELETE | `/rooms/:id/admins/:userId`     | Remove admin (owner)                           |
+| POST   | `/rooms/:id/ban/:userId`        | Ban member from room                           |
+| DELETE | `/rooms/:id/ban/:userId`        | Unban                                          |
+| GET    | `/rooms/:id/bans`               | List bans (admins/owner)                       |
+| POST   | `/rooms/:id/invitations`        | `{ username }` invite to private room          |
+| PUT    | `/rooms/:id/invitations/:invId` | `{ action: 'accept' \| 'reject' }` — respond to invitation |
+
 
 ### 5.5 Messages
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/rooms/:id/messages?before=<cursor>&limit=50` | Paginated history (cursor-based) |
-| POST | `/rooms/:id/messages` | Send message |
-| PUT | `/rooms/:id/messages/:msgId` | Edit own message |
-| DELETE | `/rooms/:id/messages/:msgId` | Delete message |
-| GET | `/dialogs` | List personal dialogs |
-| GET | `/dialogs/:userId/messages?before=<cursor>&limit=50` | Dialog history |
-| POST | `/dialogs/:userId/messages` | Send personal message |
-| PUT | `/dialogs/:userId/messages/:msgId` | Edit own DM |
-| DELETE | `/dialogs/:userId/messages/:msgId` | Delete DM |
+Cursor-based pagination using `_id` as the cursor (ObjectId is monotonically increasing with creation time).
+
+
+| Method | Path                                                   | Description                            |
+| ------ | ------------------------------------------------------ | -------------------------------------- |
+| GET    | `/rooms/:id/messages?before=<objectId>&limit=50`       | Paginated history                      |
+| POST   | `/rooms/:id/messages`                                  | `{ content, replyToId? }`              |
+| PUT    | `/rooms/:id/messages/:msgId`                           | `{ content }` — edit own message       |
+| DELETE | `/rooms/:id/messages/:msgId`                           | Soft-delete                            |
+| GET    | `/dialogs`                                             | List dialogs with last message preview |
+| GET    | `/dialogs/:userId/messages?before=<objectId>&limit=50` | Dialog history                         |
+| POST   | `/dialogs/:userId/messages`                            | `{ content, replyToId? }`              |
+| PUT    | `/dialogs/:userId/messages/:msgId`                     | Edit                                   |
+| DELETE | `/dialogs/:userId/messages/:msgId`                     | Soft-delete                            |
+
 
 ### 5.6 Attachments
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/attachments/upload` | Upload file, returns `{ id, url }` |
-| GET | `/attachments/:id` | Download attachment (auth + access check) |
+
+| Method | Path                  | Description                           |
+| ------ | --------------------- | ------------------------------------- |
+| POST   | `/attachments/upload` | Multipart form; returns `{ id, url }` |
+| GET    | `/attachments/:id`    | Auth-gated file download / stream     |
+
 
 ---
 
-## 6. WebSocket Protocol
+## 6. Socket.IO Protocol
 
-Single persistent WS connection per browser tab: `wss://host/ws?token=<access_token>`
+Use **Socket.IO v4** with the `**@socket.io/redis-adapter`** so events are broadcast across multiple API instances.
+
+Connection: `wss://host` with `{ auth: { token: '<accessToken>' } }` in Socket.IO handshake options.
 
 ### 6.1 Client → Server events
 
-```jsonc
-// Mark message read
-{ "type": "read", "roomId": "...", "messageId": "..." }
+```ts
+// User activity (reset AFK timer)
+socket.emit('activity')
+
+// Mark room/dialog as read
+socket.emit('read', { roomId?: string, dialogId?: string, messageId: string })
 
 // Typing indicator
-{ "type": "typing", "roomId": "...", "dialogUserId": "..." }
+socket.emit('typing', { roomId?: string, dialogUserId?: string })
 
-// Heartbeat / presence ping (every 30s)
-{ "type": "ping" }
+// Keepalive (every 30 s)
+socket.emit('ping')
 ```
 
 ### 6.2 Server → Client events
 
-```jsonc
-// New message delivered
-{ "type": "message", "payload": { ...messageObject } }
+```ts
+// New message
+socket.on('message', (msg: MessagePayload) => {})
 
-// Message edited
-{ "type": "message_edited", "payload": { ...messageObject } }
+// Message was edited
+socket.on('message_edited', (msg: MessagePayload) => {})
 
-// Message deleted
-{ "type": "message_deleted", "payload": { "id": "...", "roomId": "..." } }
+// Message was deleted
+socket.on('message_deleted', ({ id, roomId, dialogId }: DeletedPayload) => {})
 
-// Presence update
-{ "type": "presence", "payload": { "userId": "...", "status": "online|afk|offline" } }
+// Presence change
+socket.on('presence', ({ userId, status }: { userId: string, status: 'online' | 'afk' | 'offline' }) => {})
 
 // Room membership change
-{ "type": "room_event", "payload": { "event": "joined|left|banned|unbanned", "roomId": "...", "userId": "..." } }
+socket.on('room_event', ({ event, roomId, userId }: RoomEventPayload) => {})
+// event: 'joined' | 'left' | 'banned' | 'unbanned' | 'invited'
 
-// Friend request notification
-{ "type": "friend_request", "payload": { ...requestObject } }
+// Friend request
+socket.on('friend_request', (request: FriendRequestPayload) => {})
 
-// Typing indicator
-{ "type": "typing", "payload": { "userId": "...", "roomId": "...", "dialogUserId": "..." } }
+// Typing indicator from another user
+socket.on('typing', ({ userId, roomId, dialogId }: TypingPayload) => {})
 ```
+
+### 6.3 Socket.IO Rooms (server-side)
+
+On authenticated connect, join the user to:
+
+- A personal room: `user:<userId>` — for DMs, friend requests, personal notifications
+- All chat rooms the user is a member of: `room:<roomId>`
+- All dialogs the user participates in: `dialog:<dialogId>`
+
+This way `io.to('room:<id>').emit(...)` fans out to all members automatically.
 
 ---
 
 ## 7. Presence System
 
-Presence is coordinated through **Redis**.
+Presence is stored in **Redis** so it works across multiple API pods.
 
-### 7.1 Per-tab tracking
+### 7.1 Per-tab tracking (Redis hash)
 
-- On WS connect: `HSET presence:{userId} {tabId} {timestamp}` + `EXPIRE presence:{userId} 90`
-- Every 30s heartbeat from client resets the TTL: `HSET presence:{userId} {tabId} {now}` + `EXPIRE presence:{userId} 90`
-- On disconnect: `HDEL presence:{userId} {tabId}`
+```
+Key:   presence:{userId}
+Field: {socketId}
+Value: {timestamp ms}
+TTL:   90 seconds (reset on every heartbeat)
+```
+
+```ts
+// On socket connect
+await redis.hset(`presence:${userId}`, socketId, Date.now());
+await redis.expire(`presence:${userId}`, 90);
+
+// On socket disconnect
+await redis.hdel(`presence:${userId}`, socketId);
+
+// On 'ping' event or 'activity' from client
+await redis.hset(`presence:${userId}`, socketId, Date.now());
+await redis.expire(`presence:${userId}`, 90);
+```
 
 ### 7.2 AFK detection
 
-- Client sends `{ "type": "activity" }` events on any user interaction.
-- If no activity event received for a tab for >60s, server marks that tab as AFK in Redis.
-- Computed presence: if **any** tab has activity within 60s → `online`; if all tabs idle >60s → `afk`; if hash key missing (TTL expired or all tabs removed) → `offline`.
+Each socket has its own last-activity timestamp in the hash value. On each heartbeat evaluation:
+
+```ts
+function evaluatePresence(tabs: Record<string, number>): 'online' | 'afk' | 'offline' {
+  const now = Date.now();
+  if (Object.keys(tabs).length === 0) return 'offline';
+  const anyActive = Object.values(tabs).some(ts => now - ts < 60_000);
+  return anyActive ? 'online' : 'afk';
+}
+```
+
+Client sends `activity` event on mouse move / keypress (throttled to once per 10 s).
 
 ### 7.3 Propagation
 
-- On presence change, publish to Redis channel `presence_updates`.
-- Subscribed workers fan-out WS `presence` events to all users who share a room or contact with the changed user.
-- Target latency: <2 seconds (per spec §3.2).
+- On presence change publish to Redis channel `presence_updates`: `{ userId, status }`.
+- Subscribed server worker emits `presence` Socket.IO event to all rooms the user belongs to.
+- Target: propagation latency < 2 s.
 
 ---
 
 ## 8. File Storage
 
-- Files stored under a Docker volume mounted at `/uploads` inside the API container.
-- Directory structure: `/uploads/{roomId|dialog}/{attachmentId}/{original_name}`
-- On each download request:
-  1. Verify JWT is valid.
-  2. Check user is current member of room or participant of dialog.
-  3. Stream file from disk.
-- **Size limits** enforced at upload time: images ≤ 3 MB, other files ≤ 20 MB.
-- Files are **not deleted** when a user is removed from a room. They are deleted only when the room itself is deleted (cascade DELETE on `attachments`, with a post-delete hook to remove files from disk).
+- Multer middleware saves to `/uploads/{roomId|dialogId}/{uuid}-{originalName}`.
+- `storedPath` in the `attachments` collection stores the path relative to `/uploads`.
+- Download handler (`GET /attachments/:id`):
+  1. Validate JWT.
+  2. Fetch attachment document.
+  3. Resolve parent message → check user is member of the room or participant of the dialog.
+  4. Stream file using `res.sendFile()`.
+- **Size limits** (enforced by Multer before writing to disk):
+  - Images (`image/`* MIME): ≤ 3 MB
+  - All other files: ≤ 20 MB
+- Files survive user removal from a room. They are deleted from disk only when the room or dialog is deleted (handled in a Mongoose `post('deleteOne')` hook on the Room/Dialog model).
 
 ---
 
 ## 9. Authentication & Session Design
 
-- **Password hashing:** bcrypt with cost factor ≥ 12.
-- **Access token:** JWT, short-lived (15 min), signed with HS256 or RS256.
-- **Refresh token:** opaque random token (UUID v4), stored as `token_hash` (SHA-256) in `sessions` table. HttpOnly, Secure, SameSite=Strict cookie.
-- **Persistent login:** Refresh token valid for 30 days. On each token refresh, optionally rotate the refresh token (sliding window).
-- **Multi-session:** Each browser has its own session row. Logout deletes only that row.
-- **Session list endpoint** returns `{ id, user_agent, ip_address, created_at, last_used_at }` — do not expose raw tokens.
+- **Password hashing:** `bcrypt`, `saltRounds = 12`.
+- **Access token:** JWT signed with `HS256`, expires in **15 minutes**. Payload: `{ sub: userId, sessionId }`.
+- **Refresh token:** Random 48-byte hex string (`crypto.randomBytes(48).toString('hex')`). Stored as `SHA-256(token)` in the `sessions` collection. Sent as an HttpOnly, Secure, SameSite=Strict cookie.
+- **Refresh expiry:** 30 days. TTL index on `sessions.expiresAt` handles auto-cleanup.
+- **Token rotation:** On `/auth/refresh`, issue a new refresh token and revoke the old one (update `revokedAt`).
+- **Multi-session:** Each browser/device has its own `sessions` document. `/auth/logout` sets `revokedAt` only on the current session.
+- **Session list:** Return `{ _id, userAgent, ipAddress, createdAt }` — never return the token or hash.
+- **Password reset:** Generate a short-lived signed JWT (`expiresIn: '1h'`) as the reset token; embed in the reset link. No separate DB table needed.
 
 ---
 
 ## 10. AFK / Multi-Tab Logic
 
 ```
-Browser Tab A ──ping/activity──► WS handler ──► Redis HSET presence:{uid} tabA now
-Browser Tab B ──ping/activity──► WS handler ──► Redis HSET presence:{uid} tabB now
+Tab A connects → socket.id = "abc"
+Tab B connects → socket.id = "xyz"
 
-Presence evaluator (runs on each heartbeat or disconnect):
-  tabs = HGETALL presence:{uid}
-  now = current time
-  active_tabs   = [t for t in tabs if now - tabs[t] < 60s]
-  inactive_tabs = [t for t in tabs if now - tabs[t] >= 60s]
+Redis: presence:{userId} = { abc: 1713400000000, xyz: 1713400005000 }
 
-  if len(tabs) == 0:           status = "offline"
-  elif len(active_tabs) > 0:   status = "online"
-  else:                        status = "afk"
+Every 30s, server evaluates:
+  tabs = await redis.hgetall(`presence:${userId}`)
+  now = Date.now()
+
+  if no keys          → status = 'offline'
+  if any ts > now-60s → status = 'online'
+  else                → status = 'afk'
+
+On status change → publish to Redis → fan-out Socket.IO 'presence' event
 ```
+
+A user becomes `offline` only when:
+
+- All sockets disconnect (hash key TTL expires at 90 s, or all fields deleted), **or**
+- The hash becomes empty after `HDEL`.
 
 ---
 
 ## 11. Access Control Rules Summary
 
-| Action | Allowed by |
-|---|---|
-| Send personal message | Friends only, neither side banned the other |
-| Join public room | Any authenticated user unless room-banned |
-| Join private room | Invitation only |
-| Edit message | Author only |
-| Delete message | Author **or** room admin/owner |
-| Promote/demote admin | Room owner |
-| Ban from room | Room admin or owner |
-| Unban from room | Room admin or owner |
-| Delete room | Room owner only |
-| Download attachment | Current room member or dialog participant |
-| View room ban list | Room admins and owner |
+
+| Action                       | Allowed by                                                        |
+| ---------------------------- | ----------------------------------------------------------------- |
+| Send personal message        | Friends only, neither side has banned the other                   |
+| Join public room             | Any authenticated user not room-banned                            |
+| Join private room            | Invitation only                                                   |
+| Edit message                 | Author only                                                       |
+| Delete message               | Author **or** room admin/owner (room messages); author only (DMs) |
+| Promote / demote admin       | Room owner                                                        |
+| Ban from room                | Room admin or owner                                               |
+| Remove member from room      | Room admin or owner — **treated as a ban** (user is removed and cannot rejoin until unbanned) |
+| Unban from room              | Room admin or owner                                               |
+| Delete room                  | Room owner only                                                   |
+| Owner leave room             | **Not allowed** — returns `400 Bad Request`                       |
+| Download attachment          | Current room member or dialog participant                         |
+| View room ban list           | Room admins and owner                                             |
+
 
 ---
 
 ## 12. Business Logic Edge Cases
 
-1. **Account deletion cascade:**
-   - Delete all rooms owned by the user (cascade messages, files, memberships).
-   - Remove user from all other rooms' member lists.
-   - Remove all sessions.
-   - Soft-delete or hard-delete user row (choose one, be consistent).
+### 12.1 Account deletion cascade
 
-2. **Room deletion cascade:**
-   - Delete all `messages`, `attachments` (DB rows).
-   - Delete files from disk (implement post-delete hook or deferred cleanup job).
-   - Delete `room_members`, `room_bans`, `room_invitations`.
+Handle in a `UserService.deleteAccount(userId)` method — do not rely on DB constraints:
 
-3. **User-to-user ban:**
-   - Terminate friendship (delete `friend_requests` row where status='accepted').
-   - Existing dialog messages remain in DB but API returns them as read-only (no POST/PUT/DELETE allowed).
-   - Block new friend requests and new DMs between the pair.
+```
+1. Find all rooms where ownerId === userId → delete each (triggers room deletion cascade)
+2. Pull userId from RoomMember documents in all other rooms
+3. Update FriendRequest documents referencing userId
+4. Delete all Session documents for userId
+5. Set user.deletedAt = now (soft delete)
+```
 
-4. **Room owner cannot leave:**
-   - Owner must transfer ownership or delete the room. API must return 400 if owner attempts to leave.
+### 12.2 Room deletion cascade
 
-5. **Message max size:**
-   - Reject messages where `content` length > 3072 bytes (not characters). Return 422.
+Handle in a `RoomService.deleteRoom(roomId)` Mongoose post-hook or service method:
 
-6. **Infinite scroll pagination:**
-   - Use cursor-based pagination: `?before=<message_id>&limit=50`.
-   - Return messages in **descending** `created_at` order (newest first on API, client reverses for display).
+```
+1. Delete all Message documents where roomId matches
+2. Delete all Attachment documents where messageId matches those messages
+3. Delete files from disk (fs.rm)
+4. Delete RoomMember, RoomBan, RoomInvitation documents
+5. Delete Room document
+```
+
+### 12.3 User-to-user ban
+
+```
+1. Delete FriendRequest where (fromUser=A,toUser=B) or (fromUser=B,toUser=A) with status='accepted'
+2. Create UserBan { blockerId: A, blockedId: B }
+3. Existing Dialog documents remain; API enforces read-only by checking ban before POST/PUT/DELETE
+```
+
+### 12.4 Room owner cannot leave
+
+`DELETE /rooms/:id/leave` must return `400 Bad Request` if `req.user._id === room.ownerId`.
+
+### 12.5 Message max size
+
+Validate in bytes before saving:
+
+```ts
+if (Buffer.byteLength(content, 'utf8') > 3072)
+  throw new BadRequestError('Message exceeds 3 KB');
+```
+
+### 12.6 Cursor pagination with MongoDB
+
+```ts
+const query: FilterQuery<IMessage> = { roomId, deletedAt: null };
+if (before) {
+  query._id = { $lt: new Types.ObjectId(before) };
+}
+const messages = await Message.find(query)
+  .sort({ _id: -1 })
+  .limit(limit)
+  .lean();
+// Client reverses array for chronological display
+```
 
 ---
 
 ## 13. UI Layout Specification
 
-Following the wireframes in the requirements:
+Following the wireframes in the requirements.
+
+> **Sidebar naming note:** The requirements document (§4.1.1) states "Rooms and contacts are displayed on the right." However, the wireframe in Appendix A of the same document visually positions the rooms+contacts panel as the **leftmost** column (despite mislabeling it "RIGHT SIDEBAR" in the wireframe label). The visual wireframe position takes precedence. Implement rooms+contacts as the **left** sidebar and members/context as the **right** sidebar, consistent with standard chat UX conventions and the layout below.
 
 ### 13.1 Unauthenticated screens
+
 - `/login` — Email + password + "Keep me signed in" checkbox
 - `/register` — Email, username, password, confirm password
 - `/forgot-password` — Email input → send reset link
@@ -456,144 +651,226 @@ Following the wireframes in the requirements:
 ### 13.2 Main application layout (authenticated)
 
 ```
-┌─────────────── Top Nav ───────────────────────────────────────────┐
+┌─────────────── Top Nav ───────────────────────────────────────────────────────┐
 │  Logo | Public Rooms | Private Rooms | Contacts | Sessions | Profile ▼ | Sign out │
-├─────────────┬────────────────────────────┬────────────────────────┤
-│ LEFT SIDEBAR│     MAIN CHAT AREA         │   RIGHT SIDEBAR        │
-│ (rooms +    │                            │  (members / context)   │
-│  contacts)  │                            │                        │
-│             │  Message history           │  Room info             │
-│ Search bar  │  (infinite scroll up)      │  Owner, admins         │
-│             │                            │  Member list           │
-│ ROOMS       │  ─────────────────         │  with presence dots    │
-│  > Public   │                            │                        │
-│  > Private  │  Message input             │  [Invite user]         │
-│             │  (emoji, attach, reply)    │  [Manage room]         │
-│ CONTACTS    │                            │                        │
-│  list with  │                            │                        │
-│  presence   │                            │                        │
-│ [Create rm] │  [Send]                    │                        │
-└─────────────┴────────────────────────────┴────────────────────────┘
+├──────────────┬─────────────────────────────┬──────────────────────────────────┤
+│ LEFT SIDEBAR │      MAIN CHAT AREA         │  RIGHT SIDEBAR                   │
+│ (rooms +     │                             │  (members / context)             │
+│  contacts)   │  Message history            │                                  │
+│              │  (infinite scroll up)       │  Room info                       │
+│  Search bar  │                             │  Owner / admins                  │
+│              │  ────── older msgs ──────   │  Member list + presence dots     │
+│  ROOMS       │                             │                                  │
+│   > Public   │  Message input              │  [Invite user]                   │
+│   > Private  │  (emoji | attach | reply)   │  [Manage room]                   │
+│              │                             │                                  │
+│  CONTACTS    │                      [Send] │                                  │
+│  [Create rm] │                             │                                  │
+└──────────────┴─────────────────────────────┴──────────────────────────────────┘
 ```
 
 - After entering a room the rooms list collapses to accordion style.
-- Presence indicators: green dot = online, amber = AFK, grey = offline.
+- Presence indicators: `●` green = online, `◐` amber = AFK, `○` grey = offline.
 - Unread badge counter on room/contact names.
 
 ### 13.3 Manage Room modal (admin/owner)
 
-Tabbed modal with: **Members | Admins | Banned users | Invitations | Settings**
+Tabbed modal: **Members | Admins | Banned users | Invitations | Settings**
 
 - **Members tab:** searchable list, role column, action buttons (Make admin, Ban, Remove).
-- **Admins tab:** list of current admins; owner marked as immutable.
-- **Banned users tab:** banned username, banned by, date, Unban button.
-- **Invitations tab:** invite by username input.
+- **Admins tab:** list of current admins; owner row has no action buttons.
+- **Banned users tab:** username, banned by, date, Unban button.
+- **Invitations tab:** invite by username input + Send button.
 - **Settings tab:** edit name, description, visibility toggle, Save / Delete room.
 
 ---
 
 ## 14. Non-Functional Implementation Notes
 
-| Requirement | Implementation guidance |
-|---|---|
-| 300 concurrent users | Node.js event loop or Python async handles this comfortably; no special tuning needed at this scale |
-| Message delivery <3s | WebSocket push; no polling |
-| History ≥ 10,000 msgs | Cursor pagination; never load all at once |
-| File size limits | Enforce in middleware before writing to disk |
-| No inactivity logout | Do not set session idle timeout; only expiry-based TTL on refresh token |
-| Passwords hashed | bcrypt / argon2; never store plaintext |
+
+| Requirement               | Implementation guidance                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| 300 concurrent users      | Node.js single-thread event loop is fine; Socket.IO + Redis adapter scales horizontally if needed |
+| Message delivery < 3 s    | Socket.IO push — no polling                                                                       |
+| History ≥ 10,000 messages | ObjectId cursor pagination; never `find()` without limit                                          |
+| File size limits          | Multer `limits.fileSize` per MIME type group; reject before writing                               |
+| No inactivity logout      | No idle session TTL — only `expiresAt` on refresh token                                           |
+| Passwords hashed          | `bcrypt` saltRounds=12; never log or return `passwordHash`                                        |
+| MongoDB cascade           | No FK constraints; implement cascades in service layer or Mongoose middleware                     |
+| Text search for rooms     | Use MongoDB Atlas Search **or** `$text` index on `name` + `description` fields                    |
+
 
 ---
 
-## 15. Docker Compose Structure
+## 15. Docker Compose
 
 ```yaml
-# docker-compose.yml (outline)
+# docker-compose.yml
 services:
-  db:
-    image: postgres:16
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: chat
-      POSTGRES_USER: chat
-      POSTGRES_PASSWORD: secret
+      MONGO_INITDB_DATABASE: chat
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
 
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://chat:secret@db:5432/chat
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/chat
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: change_me
+      JWT_SECRET: change_me_in_production
+      JWT_REFRESH_SECRET: change_me_too
+      PORT: 3001
     volumes:
       - uploads:/uploads
-    depends_on: [db, redis]
+    depends_on:
+      - mongo
+      - redis
     ports:
       - "3001:3001"
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:80"
-    depends_on: [api]
+    depends_on:
+      - api
 
 volumes:
-  db_data:
+  mongo_data:
   uploads:
+```
+
+### Backend Dockerfile (outline)
+
+```dockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY package*.json ./
+RUN npm ci --omit=dev
+EXPOSE 3001
+CMD ["node", "dist/index.js"]
+```
+
+### Frontend Dockerfile (outline)
+
+```dockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+```
+
+### nginx.conf (frontend/nginx.conf)
+
+```nginx
+server {
+  listen 80;
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Serve static assets with cache headers
+  location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    try_files $uri =404;
+  }
+
+  # All other routes → SPA entry point (client-side routing)
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
 ```
 
 ---
 
 ## 16. Advanced Feature: Jabber / XMPP (Optional)
 
-Implement only after core features are complete.
+Implement only after the core feature set is complete.
 
 ### 16.1 Scope
-- Users connect to the server via any Jabber/XMPP client (Gajim, Pidgin, etc.).
+
+- Users connect to the chat server using any standard Jabber/XMPP client (e.g. Gajim, Pidgin).
 - Server-to-server (S2S) federation between two instances.
-- Admin UI screens: **XMPP Connection Dashboard** and **Federation Traffic Statistics**.
+- Admin UI additions: **XMPP Connection Dashboard** and **Federation Traffic Statistics**.
 
-### 16.2 Integration approach
+### 16.2 Recommended approach
 
-**Node.js:** `node-xmpp-server` or `prosody` sidecar container  
-**Python:** `slixmpp` / `aioxmpp` / embed a `Prosody` or `ejabberd` sidecar
+Run a **Prosody** sidecar container and bridge authentication to the main app's MongoDB user table using Prosody's [mod_auth_http](https://modules.prosody.im/mod_auth_http) module, pointing it at a dedicated internal endpoint on the Express API.
 
-Recommended: run **ejabberd or Prosody as a sidecar** in docker-compose and bridge authentication to the main app's user table via an external auth module. This is an integration, not a rewrite.
+```
+XMPP client ──XMPP──► Prosody sidecar ──HTTP auth──► Express API ──► MongoDB
+```
+
+This makes XMPP an integration concern rather than a rewrite.
 
 ### 16.3 Docker Compose addition for federation
 
 ```yaml
   xmpp_a:
-    image: prosody:latest
-    environment:
-      LOCAL_DOMAIN: server-a.chat
+    image: prosody/prosody:latest
     volumes:
       - ./xmpp/prosody-a.cfg.lua:/etc/prosody/prosody.cfg.lua
+    ports:
+      - "5222:5222"   # client-to-server
+      - "5269:5269"   # server-to-server
 
   xmpp_b:
-    image: prosody:latest
-    environment:
-      LOCAL_DOMAIN: server-b.chat
+    image: prosody/prosody:latest
     volumes:
       - ./xmpp/prosody-b.cfg.lua:/etc/prosody/prosody.cfg.lua
+    ports:
+      - "5223:5222"
+      - "5270:5269"
 ```
 
-### 16.4 Load test for federation
+### 16.4 Federation load test
 
-- Use `slixmpp` or `tsung` to simulate 50+ clients on each server.
-- Script: connect 50 clients to `xmpp_a`, 50 to `xmpp_b`, send cross-server messages, measure delivery latency and success rate.
-- Report results in `federation-load-test-results.md`.
+- Use `[node-xmpp-client](https://www.npmjs.com/package/@xmpp/client)` in a Node.js script to spawn 50+ clients per server.
+- Script: connect 50 clients to `xmpp_a`, 50 to `xmpp_b`, exchange cross-server messages, measure round-trip latency and delivery success rate.
+- Save results to `federation-load-test-results.md`.
 
 ### 16.5 Admin UI additions
-- **XMPP Connection Dashboard:** online XMPP clients count, connected JIDs, uptime.
-- **Federation Traffic:** messages sent/received per federated domain, error rates.
+
+- **XMPP Connection Dashboard:** count of connected XMPP sessions, list of connected JIDs, server uptime.
+- **Federation Traffic:** messages per federated domain, error/failure rates, last activity timestamp.
 
 ---
 
-## 17. Project Repository Structure (Suggested)
+## 17. Project Repository Structure
 
 ```
 /
@@ -601,57 +878,136 @@ Recommended: run **ejabberd or Prosody as a sidecar** in docker-compose and brid
 ├── README.md
 ├── backend/
 │   ├── Dockerfile
-│   ├── src/
-│   │   ├── index.ts          # entry point
-│   │   ├── routes/           # REST route handlers
-│   │   ├── ws/               # WebSocket handler
-│   │   ├── services/         # business logic
-│   │   ├── db/               # ORM models + migrations
-│   │   ├── middleware/        # auth, upload limits
-│   │   └── presence/         # Redis presence manager
-│   └── package.json
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── index.ts                  # Bootstrap: Express + Socket.IO + MongoDB + Redis
+│       ├── config.ts                 # Env vars with validation
+│       ├── routes/
+│       │   ├── auth.routes.ts
+│       │   ├── sessions.routes.ts
+│       │   ├── users.routes.ts
+│       │   ├── contacts.routes.ts
+│       │   ├── rooms.routes.ts
+│       │   ├── messages.routes.ts
+│       │   ├── dialogs.routes.ts
+│       │   └── attachments.routes.ts
+│       ├── socket/
+│       │   ├── index.ts              # Socket.IO setup, auth middleware
+│       │   └── handlers/             # presence, messaging, typing handlers
+│       ├── services/
+│       │   ├── auth.service.ts
+│       │   ├── room.service.ts
+│       │   ├── message.service.ts
+│       │   ├── contact.service.ts
+│       │   └── presence.service.ts
+│       ├── models/                   # Mongoose schemas
+│       │   ├── user.model.ts
+│       │   ├── session.model.ts
+│       │   ├── room.model.ts
+│       │   ├── roomMember.model.ts
+│       │   ├── roomBan.model.ts
+│       │   ├── roomInvitation.model.ts
+│       │   ├── dialog.model.ts
+│       │   ├── message.model.ts
+│       │   ├── attachment.model.ts
+│       │   ├── friendRequest.model.ts
+│       │   ├── userBan.model.ts
+│       │   └── lastRead.model.ts
+│       ├── middleware/
+│       │   ├── auth.middleware.ts    # JWT verification
+│       │   └── upload.middleware.ts  # Multer config with size limits
+│       ├── presence/
+│       │   └── presence.manager.ts  # Redis HSET/HGETALL logic
+│       └── lib/
+│           ├── redis.ts             # ioredis client singleton
+│           └── errors.ts           # Custom error classes
 ├── frontend/
 │   ├── Dockerfile
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── pages/            # Login, Register, Chat, Sessions, Profile
-│   │   ├── components/       # Sidebar, MessageList, MessageInput, Modals
-│   │   ├── hooks/            # useWebSocket, usePresence, useAuth
-│   │   └── api/              # REST client wrappers
-│   └── package.json
-└── xmpp/                     # (optional) XMPP sidecar configs
+│   ├── nginx.conf
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── vite.config.ts
+│   └── src/
+│       ├── main.tsx
+│       ├── App.tsx
+│       ├── pages/
+│       │   ├── Login.tsx
+│       │   ├── Register.tsx
+│       │   ├── ForgotPassword.tsx
+│       │   ├── ResetPassword.tsx
+│       │   ├── Chat.tsx             # Main layout page
+│       │   ├── Sessions.tsx
+│       │   └── Profile.tsx
+│       ├── components/
+│       │   ├── layout/
+│       │   │   ├── TopNav.tsx
+│       │   │   ├── LeftSidebar.tsx
+│       │   │   └── RightSidebar.tsx
+│       │   ├── chat/
+│       │   │   ├── MessageList.tsx
+│       │   │   ├── MessageItem.tsx
+│       │   │   └── MessageInput.tsx
+│       │   └── modals/
+│       │       └── ManageRoomModal.tsx
+│       ├── hooks/
+│       │   ├── useSocket.ts
+│       │   ├── usePresence.ts
+│       │   ├── useAuth.ts
+│       │   └── useInfiniteMessages.ts
+│       ├── store/                   # Zustand stores
+│       │   ├── auth.store.ts
+│       │   ├── chat.store.ts
+│       │   └── presence.store.ts
+│       └── api/                     # Axios wrappers
+│           ├── auth.api.ts
+│           ├── rooms.api.ts
+│           ├── messages.api.ts
+│           └── contacts.api.ts
+└── xmpp/                            # (optional) Prosody sidecar configs
+    ├── prosody-a.cfg.lua
+    └── prosody-b.cfg.lua
 ```
 
 ---
 
-## 18. Checklist for the Implementing Agent
+## 18. Implementation Checklist
 
-- [ ] `docker compose up` starts all services cleanly from a fresh clone
-- [ ] Registration, login, persistent login, logout implemented
-- [ ] Password reset flow implemented
-- [ ] Session list and per-session logout implemented
-- [ ] Friend requests (send, accept, reject, remove) implemented
-- [ ] User-to-user ban implemented (DMs frozen, friendship terminated)
-- [ ] Public room catalog with search implemented
-- [ ] Private rooms with invitation-only access implemented
-- [ ] Room creation, settings, deletion implemented
-- [ ] Admin/owner role management implemented
-- [ ] Room ban/unban implemented
-- [ ] Real-time messaging in rooms (WebSocket) implemented
-- [ ] Real-time personal messaging (WebSocket) implemented
-- [ ] Message editing with "edited" indicator implemented
-- [ ] Message deletion (author and admin) implemented
-- [ ] Message replies with visual quote implemented
-- [ ] Emoji support in messages implemented
-- [ ] File and image upload/download implemented
-- [ ] Attachment access control (membership-gated) implemented
-- [ ] Presence (online/AFK/offline) with multi-tab logic implemented
-- [ ] Presence propagation latency <2s verified
-- [ ] Unread message indicators on rooms and contacts implemented
-- [ ] Infinite scroll for message history implemented
-- [ ] 3 KB message size limit enforced
-- [ ] 20 MB / 3 MB file size limits enforced
-- [ ] All moderation actions available in modal dialogs
-- [ ] Mobile-first responsive layout implemented
-- [ ] (Optional) XMPP/Jabber sidecar integrated
-- [ ] (Optional) Federation load test script included
+- `docker compose up` starts all services cleanly from a fresh clone
+- All Mongoose models defined with correct indexes
+- Registration, login, persistent login (refresh cookie), logout implemented
+- Password reset flow implemented (JWT-based reset token)
+- Password change (authenticated) implemented
+- Session list and per-session revocation implemented
+- Account deletion with full cascade implemented
+- Friend requests (send, accept, reject, remove) implemented
+- User-to-user ban implemented (DMs frozen, friendship terminated)
+- Public room catalog with text search implemented
+- Private rooms with invitation-only access implemented
+- Room creation, settings update, deletion implemented (with cascade)
+- Admin/owner role promotion and demotion implemented
+- Room ban/unban with correct ban-list visibility implemented
+- Room owner cannot leave (returns 400) enforced
+- Real-time room messaging via Socket.IO implemented
+- Real-time personal (dialog) messaging via Socket.IO implemented
+- Message editing with `editedAt` indicator implemented
+- Message soft-deletion (author and admin) implemented
+- Message replies with quoted content implemented
+- Emoji support in message content
+- File and image upload via Multer implemented
+- Attachment access control (membership-gated download) implemented
+- Cascade file deletion when room/dialog deleted
+- Presence (online / AFK / offline) with Redis hash tracking implemented
+- Multi-tab AFK logic (all tabs idle > 60 s → AFK) implemented
+- Presence propagation latency < 2 s verified
+- Unread message indicators on rooms and contacts implemented
+- Cursor-based infinite scroll for message history implemented
+- 3 KB message size limit enforced in bytes
+- 20 MB / 3 MB file size limits enforced by Multer
+- All admin moderation actions available in modal dialogs
+- Mobile-first responsive layout with Tailwind CSS
+- (Optional) Prosody XMPP sidecar integrated with HTTP auth bridge
+- (Optional) S2S federation docker-compose configuration added
+- (Optional) Federation load test script (50+ clients per server) included
+- (Optional) XMPP admin dashboard screens added
+
