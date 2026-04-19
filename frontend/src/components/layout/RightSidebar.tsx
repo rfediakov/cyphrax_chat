@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/auth.store';
 import { getRoom, getMembers, normalizeMember, sendInvitation } from '../../api/rooms.api';
 import { ManageRoomModal } from '../modals/ManageRoomModal';
 import type { Room } from '../../store/chat.store';
+import { PresenceDot, type PresenceStatus } from '../ui/PresenceDot';
 
 interface RoomMember {
   _id: string;
@@ -13,17 +14,6 @@ interface RoomMember {
     username: string;
   };
   role: 'owner' | 'admin' | 'member';
-}
-
-type PresenceStatus = 'online' | 'afk' | 'offline';
-
-function PresenceDot({ status }: { status: PresenceStatus }) {
-  const colors: Record<PresenceStatus, string> = {
-    online: 'bg-green-400',
-    afk: 'bg-amber-400',
-    offline: 'bg-gray-500',
-  };
-  return <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${colors[status]}`} />;
 }
 
 export function RightSidebar() {

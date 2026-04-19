@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-
-type PresenceStatus = 'online' | 'afk' | 'offline';
+import type { PresenceStatus } from '../components/ui/PresenceDot';
 
 interface PresenceState {
   statuses: Record<string, PresenceStatus>;

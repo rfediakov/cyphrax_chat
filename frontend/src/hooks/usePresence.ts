@@ -1,6 +1,5 @@
 import { usePresenceStore } from '../store/presence.store';
-
-type PresenceStatus = 'online' | 'afk' | 'offline';
+import type { PresenceStatus } from '../components/ui/PresenceDot';
 
 export function usePresence() {
   const statuses = usePresenceStore((s) => s.statuses);

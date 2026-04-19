@@ -16,6 +16,7 @@ import {
   normalizeMember,
   normalizeBan,
 } from '../../api/rooms.api';
+import { PresenceDot } from '../ui/PresenceDot';
 
 type Tab = 'members' | 'admins' | 'banned' | 'invitations' | 'settings';
 
@@ -30,17 +31,6 @@ interface BannedEntry {
   userId: { _id: string; username: string };
   bannedBy?: { _id: string; username: string };
   createdAt: string;
-}
-
-type PresenceStatus = 'online' | 'afk' | 'offline';
-
-function PresenceDot({ status }: { status: PresenceStatus }) {
-  const colors: Record<PresenceStatus, string> = {
-    online: 'bg-green-400',
-    afk: 'bg-amber-400',
-    offline: 'bg-gray-500',
-  };
-  return <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${colors[status]}`} />;
 }
 
 interface Props {

@@ -13,17 +13,7 @@ import {
 } from '../api/contacts.api';
 import { normalizeContact, type Contact, type PendingFriendRequest } from '../api/contacts.api';
 import { findDialogWithUser, getDialogRecordId } from '../lib/dialogs';
-
-type PresenceStatus = 'online' | 'afk' | 'offline';
-
-function PresenceDot({ status }: { status: PresenceStatus }) {
-  const colors: Record<PresenceStatus, string> = {
-    online: 'bg-green-400',
-    afk: 'bg-amber-400',
-    offline: 'bg-gray-500',
-  };
-  return <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${colors[status]}`} title={status} />;
-}
+import { PresenceDot } from '../components/ui/PresenceDot';
 
 interface BannedUser {
   _id: string;

@@ -8,22 +8,7 @@ import { getDialogs } from '../../api/messages.api';
 import type { Contact } from '../../api/contacts.api';
 import type { Room, Dialog } from '../../store/chat.store';
 import { findDialogWithUser, getDialogRecordId } from '../../lib/dialogs';
-
-type PresenceStatus = 'online' | 'afk' | 'offline';
-
-function PresenceDot({ status }: { status: PresenceStatus }) {
-  const colors: Record<PresenceStatus, string> = {
-    online: 'bg-green-400',
-    afk: 'bg-amber-400',
-    offline: 'bg-gray-500',
-  };
-  return (
-    <span
-      className={`inline-block w-2 h-2 rounded-full shrink-0 ${colors[status]}`}
-      title={status}
-    />
-  );
-}
+import { PresenceDot } from '../ui/PresenceDot';
 
 function UnreadBadge({ count }: { count: number }) {
   if (count <= 0) return null;
