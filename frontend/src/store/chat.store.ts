@@ -86,20 +86,34 @@ export const useChatStore = create<ChatState>((set) => ({
   setDialogs: (dialogs) => set({ dialogs }),
 
   appendMessage: (contextId, msg) =>
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [contextId]: [...(state.messages[contextId] ?? []), msg],
-      },
-    })),
+    set((state) => {
+      const existing = state.messages[contextId] ?? [];
+      if (existing.some((m) => m._id === msg._id)) {
+        return state;
+      }
+      return {
+        messages: {
+          ...state.messages,
+          [contextId]: [...existing, msg],
+        },
+      };
+    }),
 
   prependMessages: (contextId, msgs) =>
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [contextId]: [...msgs, ...(state.messages[contextId] ?? [])],
-      },
-    })),
+    set((state) => {
+      const existing = state.messages[contextId] ?? [];
+      const existingIds = new Set(existing.map((m) => m._id));
+      const older = msgs.filter((m) => !existingIds.has(m._id));
+      if (older.length === 0) {
+        return state;
+      }
+      return {
+        messages: {
+          ...state.messages,
+          [contextId]: [...older, ...existing],
+        },
+      };
+    }),
 
   updateMessage: (contextId, msg) =>
     set((state) => ({

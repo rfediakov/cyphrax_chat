@@ -27,6 +27,7 @@ function useTypingUsers(contextId: string | null) {
 export default function Chat() {
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
+  const setActiveRoom = useChatStore((s) => s.setActiveRoom);
   const rooms = useChatStore((s) => s.rooms);
   const dialogs = useChatStore((s) => s.dialogs);
   const clearUnread = useChatStore((s) => s.clearUnread);
@@ -95,17 +96,31 @@ export default function Chat() {
       <TopNav />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Left sidebar */}
-        <LeftSidebar />
+        {/* Left sidebar — hidden on small screens while chatting so the message bar is usable */}
+        <LeftSidebar mobileHidden={!!activeContext} />
 
         {/* Main content */}
-        <main className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <main
+          className={`flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden ${
+            activeContext ? '' : 'hidden md:flex'
+          }`}
+        >
           {activeContext ? (
             <>
               {/* Chat header */}
-              <div className="h-11 border-b border-gray-700 flex items-center px-4 gap-2 shrink-0">
+              <div className="h-11 border-b border-gray-700 flex items-center px-2 sm:px-4 gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveRoom(null)}
+                  className="md:hidden shrink-0 p-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+                  aria-label="Back to rooms and contacts"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
                 <span className="text-gray-400 text-sm">{activeContext.contextType === 'room' ? '#' : '@'}</span>
-                <h1 className="font-semibold text-white text-sm truncate">{activeContext.name}</h1>
+                <h1 className="font-semibold text-white text-sm truncate min-w-0">{activeContext.name}</h1>
                 {currentUser && (
                   <span className="ml-auto text-xs text-gray-500">
                     Signed in as <span className="text-gray-300">@{currentUser.username}</span>

@@ -11,7 +11,7 @@ import {
   banUser,
   unbanUser,
 } from '../api/contacts.api';
-import type { Contact, FriendRequest } from '../api/contacts.api';
+import type { Contact, PendingFriendRequest } from '../api/contacts.api';
 
 type PresenceStatus = 'online' | 'afk' | 'offline';
 
@@ -37,7 +37,7 @@ export default function Contacts() {
   const dialogs = useChatStore((s) => s.dialogs);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<PendingFriendRequest[]>([]);
   const [bannedUsers, setBannedUsers] = useState<BannedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -59,7 +59,7 @@ export default function Contacts() {
         getPendingRequests(),
       ]);
       setContacts(contactsRes.data.contacts ?? []);
-      setPendingRequests(requestsRes.data.data ?? []);
+      setPendingRequests(requestsRes.data.requests ?? []);
     } catch {
       setError('Failed to load contacts.');
     } finally {
@@ -97,7 +97,7 @@ export default function Contacts() {
     setActionState(requestId, true);
     try {
       await respondToRequest(requestId, action);
-      setPendingRequests((prev) => prev.filter((r) => r._id !== requestId));
+      setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
       if (action === 'accept') {
         await loadData();
       }
@@ -212,7 +212,7 @@ export default function Contacts() {
             </h2>
             <div className="space-y-2">
               {pendingRequests.map((req) => (
-                <div key={req._id} className="flex items-center gap-3 py-2 px-3 bg-gray-800 rounded-xl">
+                <div key={req.id} className="flex items-center gap-3 py-2 px-3 bg-gray-800 rounded-xl">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white font-medium">@{req.fromUser.username}</p>
                     {req.message && (
@@ -224,15 +224,15 @@ export default function Contacts() {
                   </div>
                   <div className="flex gap-1.5 shrink-0">
                     <button
-                      onClick={() => handleRespond(req._id, 'accept')}
-                      disabled={actionLoading[req._id]}
+                      onClick={() => handleRespond(req.id, 'accept')}
+                      disabled={actionLoading[req.id]}
                       className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg transition-colors"
                     >
                       Accept
                     </button>
                     <button
-                      onClick={() => handleRespond(req._id, 'reject')}
-                      disabled={actionLoading[req._id]}
+                      onClick={() => handleRespond(req.id, 'reject')}
+                      disabled={actionLoading[req.id]}
                       className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 rounded-lg transition-colors"
                     >
                       Reject

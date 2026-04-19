@@ -144,8 +144,7 @@ export function MessageInput({
         contextType === 'room'
           ? await sendRoomMessage(contextId, payload)
           : await sendDialogMessage(dialogUserId ?? contextId, payload);
-      // Optimistically append — socket will also emit but for the room/dialog channel;
-      // the sender's own message is appended here from the REST response.
+      // Show the sent message immediately; socket broadcast is deduped in the store by _id.
       appendMessage(contextId, response.data.message);
     } catch {
       // Restore text if send failed
@@ -162,7 +161,7 @@ export function MessageInput({
   };
 
   return (
-    <div className="border-t border-gray-700 bg-gray-900 px-3 py-2">
+    <div className="shrink-0 border-t border-gray-700 bg-gray-900 px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
       {/* Reply banner */}
       {replyTo && (
         <div className="flex items-center justify-between bg-gray-800 border-l-2 border-blue-400 px-3 py-1.5 mb-2 rounded-r">

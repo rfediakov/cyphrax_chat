@@ -119,7 +119,7 @@ export function MessageList({
 
   if (initialLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400">
+      <div className="flex-1 min-h-0 flex items-center justify-center text-gray-400">
         <div className="flex flex-col items-center gap-2">
           <div className="w-6 h-6 border-2 border-gray-500 border-t-blue-400 rounded-full animate-spin" />
           <span className="text-sm">Loading messages…</span>

@@ -174,9 +174,17 @@ export function useSocket() {
       }
     });
 
-    socket.on('friend_request', (payload: { fromUser: { _id: string; username: string } }) => {
-      showToast(`@${payload.fromUser.username} sent you a friend request.`, 'info');
-    });
+    socket.on(
+      'friend_request',
+      (payload: { fromUser?: { _id: string; username: string }; fromUserId?: string }) => {
+        const username = payload.fromUser?.username;
+        if (username) {
+          showToast(`@${username} sent you a friend request.`, 'info');
+          return;
+        }
+        showToast('You have a new friend request.', 'info');
+      },
+    );
 
     socket.on('typing', ({ userId, username, contextId }: TypingPayload) => {
       addTypingUser(contextId, userId, username);
