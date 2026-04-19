@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as messageService from '../services/message.service.js';
 import { BadRequestError } from '../lib/errors.js';
+import { getIo } from '../lib/io.js';
 
 // Mounted at /api/v1/rooms — handles room message sub-routes
 const router = Router({ mergeParams: true });
@@ -35,6 +36,8 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
     }
     const msg = await messageService.sendRoomMessage(id, req.user!._id, content, replyToId, attachmentId);
     res.status(201).json({ message: msg });
+
+    getIo()?.to(`room:${id}`).emit('message', { message: msg });
   } catch (err) {
     next(err);
   }
@@ -50,6 +53,8 @@ router.put('/:msgId', requireAuth, async (req: Request, res: Response, next: Nex
     }
     const msg = await messageService.editRoomMessage(id, req.user!._id, msgId, content);
     res.json({ message: msg });
+
+    getIo()?.to(`room:${id}`).emit('message_edited', { message: msg });
   } catch (err) {
     next(err);
   }
@@ -61,6 +66,8 @@ router.delete('/:msgId', requireAuth, async (req: Request, res: Response, next: 
     const { id, msgId } = req.params as { id: string; msgId: string };
     await messageService.deleteRoomMessage(id, req.user!._id, msgId);
     res.json({ message: 'Message deleted' });
+
+    getIo()?.to(`room:${id}`).emit('message_deleted', { messageId: msgId, roomId: id });
   } catch (err) {
     next(err);
   }

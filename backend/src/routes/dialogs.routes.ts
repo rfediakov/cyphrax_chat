@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as messageService from '../services/message.service.js';
 import { BadRequestError } from '../lib/errors.js';
+import { getIo } from '../lib/io.js';
 
 const router = Router();
 
@@ -49,14 +50,16 @@ router.post(
       if (!content) {
         throw new BadRequestError('content is required');
       }
-      const msg = await messageService.sendDialogMessage(
+      const { message, dialogId } = await messageService.sendDialogMessage(
         req.user!._id,
         userId,
         content,
         replyToId,
         attachmentId,
       );
-      res.status(201).json({ message: msg });
+      res.status(201).json({ message });
+
+      getIo()?.to(`dialog:${dialogId}`).emit('message', { message });
     } catch (err) {
       next(err);
     }
@@ -74,8 +77,15 @@ router.put(
       if (!content) {
         throw new BadRequestError('content is required');
       }
-      const msg = await messageService.editDialogMessage(req.user!._id, userId, msgId, content);
-      res.json({ message: msg });
+      const { message, dialogId } = await messageService.editDialogMessage(
+        req.user!._id,
+        userId,
+        msgId,
+        content,
+      );
+      res.json({ message });
+
+      getIo()?.to(`dialog:${dialogId}`).emit('message_edited', { message });
     } catch (err) {
       next(err);
     }
@@ -89,8 +99,16 @@ router.delete(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { userId, msgId } = req.params as { userId: string; msgId: string };
+      // Resolve dialogId before the delete so we can emit to the correct channel
+      const dialogId = await messageService.getDialogId(req.user!._id, userId);
       await messageService.deleteDialogMessage(req.user!._id, userId, msgId);
       res.json({ message: 'Message deleted' });
+
+      if (dialogId) {
+        getIo()
+          ?.to(`dialog:${dialogId}`)
+          .emit('message_deleted', { messageId: msgId, dialogId });
+      }
     } catch (err) {
       next(err);
     }

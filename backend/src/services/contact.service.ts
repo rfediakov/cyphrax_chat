@@ -37,7 +37,7 @@ export async function sendFriendRequest(
   fromUserId: string,
   toUsername: string,
   message?: string,
-): Promise<void> {
+): Promise<{ toUserId: string }> {
   const fromObjectId = new Types.ObjectId(fromUserId);
 
   const toUser = await User.findOne({ username: toUsername, deletedAt: null }).lean();
@@ -83,7 +83,7 @@ export async function sendFriendRequest(
     existing.message = message ?? '';
     existing.status = 'pending';
     await existing.save();
-    return;
+    return { toUserId: toObjectId.toString() };
   }
 
   await FriendRequest.create({
@@ -91,6 +91,8 @@ export async function sendFriendRequest(
     toUser: toObjectId,
     message: message ?? '',
   });
+
+  return { toUserId: toObjectId.toString() };
 }
 
 export async function getPendingRequests(userId: string) {

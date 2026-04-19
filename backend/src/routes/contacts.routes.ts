@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as contactService from '../services/contact.service.js';
 import { BadRequestError } from '../lib/errors.js';
+import { getIo } from '../lib/io.js';
 
 const router = Router();
 
@@ -22,8 +23,12 @@ router.post('/request', requireAuth, async (req: Request, res: Response, next: N
     if (!toUsername) {
       throw new BadRequestError('toUsername is required');
     }
-    await contactService.sendFriendRequest(req.user!._id, toUsername, message);
+    const { toUserId } = await contactService.sendFriendRequest(req.user!._id, toUsername, message);
     res.status(201).json({ message: 'Friend request sent' });
+
+    getIo()
+      ?.to(`user:${toUserId}`)
+      .emit('friend_request', { fromUserId: req.user!._id });
   } catch (err) {
     next(err);
   }

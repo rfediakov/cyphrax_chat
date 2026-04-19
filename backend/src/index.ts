@@ -1,3 +1,4 @@
+import { createServer } from 'http';
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -5,6 +6,7 @@ import { config } from './config.js';
 import { connectMongo } from './lib/mongo.js';
 import { redis } from './lib/redis.js';
 import { AppError } from './lib/errors.js';
+import { initSocket } from './socket/index.js';
 import authRoutes from './routes/auth.routes.js';
 import sessionsRoutes from './routes/sessions.routes.js';
 import usersRoutes from './routes/users.routes.js';
@@ -53,7 +55,10 @@ async function bootstrap() {
   await redis.ping();
   console.log('[Redis] Ping OK');
 
-  app.listen(config.port, () => {
+  const httpServer = createServer(app);
+  initSocket(httpServer);
+
+  httpServer.listen(config.port, () => {
     console.log(`Server running on port ${config.port}`);
   });
 }
