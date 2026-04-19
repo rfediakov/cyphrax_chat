@@ -5,6 +5,10 @@ import { MessageItem } from './MessageItem';
 import { editRoomMessage, deleteRoomMessage, editDialogMessage, deleteDialogMessage } from '../../api/messages.api';
 import type { Message } from '../../store/chat.store';
 
+// Stable empty array so the Zustand selector never returns a new reference
+// when there are no messages yet (avoids useSyncExternalStore infinite loop).
+const EMPTY_MESSAGES: Message[] = [];
+
 interface MessageListProps {
   contextId: string;
   contextType: 'room' | 'dialog';
@@ -22,7 +26,7 @@ export function MessageList({
   typingUsers,
   onReply,
 }: MessageListProps) {
-  const messages = useChatStore((s) => s.messages[contextId] ?? []);
+  const messages = useChatStore((s) => s.messages[contextId] ?? EMPTY_MESSAGES);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const softDeleteMessage = useChatStore((s) => s.softDeleteMessage);
 
@@ -36,21 +40,38 @@ export function MessageList({
   const bottomRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const prevScrollHeightRef = useRef(0);
+  // Prevents handleScroll from triggering loadOlder during programmatic scrolls
+  const suppressScrollRef = useRef(false);
 
   // Load initial messages when context changes
   useEffect(() => {
     loadInitial();
   }, [contextId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-scroll to bottom on new messages (only when already at bottom)
+  // Handle auto-scroll to bottom and scroll-position restoration in one effect
+  // to correctly gate the suppress flag across both operations.
   useEffect(() => {
-    if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollRef.current;
+    suppressScrollRef.current = true;
+
+    if (prevScrollHeightRef.current > 0 && el) {
+      // Restore position after prepending older messages
+      const delta = el.scrollHeight - prevScrollHeightRef.current;
+      if (delta > 0) el.scrollTop += delta;
+      prevScrollHeightRef.current = 0;
+    } else if (isAtBottomRef.current && el) {
+      // Jump to bottom when user was already at the bottom
+      el.scrollTop = el.scrollHeight;
     }
+
+    requestAnimationFrame(() => {
+      suppressScrollRef.current = false;
+    });
   }, [messages.length]);
 
   // Preserve scroll position when prepending older messages
   const handleScroll = useCallback(() => {
+    if (suppressScrollRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -61,17 +82,6 @@ export function MessageList({
       loadOlder();
     }
   }, [hasMore, loading, loadOlder]);
-
-  // Restore scroll position after older messages are prepended
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || prevScrollHeightRef.current === 0) return;
-    const delta = el.scrollHeight - prevScrollHeightRef.current;
-    if (delta > 0) {
-      el.scrollTop += delta;
-      prevScrollHeightRef.current = 0;
-    }
-  }, [messages.length]);
 
   const handleEdit = useCallback(
     async (message: Message) => {

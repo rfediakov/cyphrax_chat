@@ -32,9 +32,8 @@ export function TopNav() {
 
       {/* Nav links */}
       <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
-        <NavLink to="/?tab=public">Public Rooms</NavLink>
-        <NavLink to="/?tab=private">Private Rooms</NavLink>
-        <NavLink to="/?tab=contacts">Contacts</NavLink>
+        <NavLink to="/public-rooms">Public Rooms</NavLink>
+        <NavLink to="/contacts">Contacts</NavLink>
         <NavLink to="/sessions">Sessions</NavLink>
       </nav>
 

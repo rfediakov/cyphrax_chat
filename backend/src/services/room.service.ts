@@ -46,6 +46,14 @@ export async function deleteRoomCascade(roomId: Types.ObjectId): Promise<void> {
   await Room.findByIdAndDelete(roomId);
 }
 
+// GET /api/v1/rooms/mine — all rooms the authenticated user is a member of
+export async function getMyRooms(userId: string): Promise<{ rooms: ReturnType<typeof toPublic>[] }> {
+  const memberships = await RoomMember.find({ userId: new Types.ObjectId(userId) }).lean();
+  const roomIds = memberships.map((m) => m.roomId);
+  const rooms = await Room.find({ _id: { $in: roomIds } }).sort({ createdAt: -1 }).lean();
+  return { rooms: rooms.map(toPublic) };
+}
+
 // GET /api/v1/rooms/public?q=&page=
 export async function getPublicRooms(
   q: string,

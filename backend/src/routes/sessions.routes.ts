@@ -19,10 +19,11 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
       .lean();
 
     const data = sessions.map((s) => ({
-      id: String(s._id),
+      _id: String(s._id),
       userAgent: s.userAgent,
       ipAddress: s.ipAddress,
       createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
       isCurrent: String(s._id) === req.user!.sessionId,
     }));
 

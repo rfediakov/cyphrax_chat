@@ -3,7 +3,7 @@ import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
 import { getContacts } from '../../api/contacts.api';
-import { getPublicRooms, createRoom } from '../../api/rooms.api';
+import { getMyRooms, createRoom, normalizeRoom } from '../../api/rooms.api';
 import { getDialogs } from '../../api/messages.api';
 import type { Contact } from '../../api/contacts.api';
 import type { Room, Dialog } from '../../store/chat.store';
@@ -51,7 +51,7 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
     setLoading(true);
     setError('');
     try {
-      const { data } = await createRoom({ name: name.trim(), description: description.trim() || undefined, isPrivate });
+      const { data } = await createRoom({ name: name.trim(), description: description.trim() || undefined, visibility: isPrivate ? 'private' : 'public' });
       onCreated(data.room);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create room';
@@ -141,11 +141,11 @@ export function LeftSidebar() {
   const loadData = useCallback(async () => {
     try {
       const [roomsRes, dialogsRes, contactsRes] = await Promise.all([
-        getPublicRooms({ page: 1 }),
+        getMyRooms(),
         getDialogs(),
         getContacts(),
       ]);
-      setRooms(roomsRes.data.rooms ?? []);
+      setRooms((roomsRes.data.rooms ?? []).map((r) => normalizeRoom(r as unknown as Record<string, unknown>)));
       setDialogs(dialogsRes.data.dialogs ?? []);
       setContacts(contactsRes.data.contacts ?? []);
     } catch {
@@ -175,9 +175,10 @@ export function LeftSidebar() {
   };
 
   const handleRoomCreated = (room: Room) => {
-    setRooms([...(rooms ?? []), room]);
+    const normalized = normalizeRoom(room as unknown as Record<string, unknown>);
+    setRooms([...(rooms ?? []), normalized]);
     setShowCreateModal(false);
-    setActiveRoom(room._id);
+    setActiveRoom(normalized._id);
   };
 
   return (

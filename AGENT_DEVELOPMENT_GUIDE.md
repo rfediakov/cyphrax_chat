@@ -886,20 +886,20 @@ Track overall progress here. Each agent should mark items complete as they finis
 - [x] Real-time message CRUD via socket events — `useSocket` hook updates chat store on `message`, `message_edited`, `message_deleted` events; typing handled via `typingUsers` map
 
 ### Frontend — Features
-- [ ] ManageRoom modal — Members tab
-- [ ] ManageRoom modal — Admins tab
-- [ ] ManageRoom modal — Banned users tab
-- [ ] ManageRoom modal — Invitations tab
-- [ ] ManageRoom modal — Settings tab (save + delete)
-- [ ] Public rooms catalog with search
-- [ ] Contacts/friends list with presence dots in sidebar
-- [ ] Friend request send + accept/reject flow
-- [ ] Unread badge counters on rooms and contacts
-- [ ] Clear unread on chat open + emit `read`
-- [ ] Room invitation toast (accept/reject)
-- [ ] Sessions page
-- [ ] Profile page (password change + account delete)
-- [ ] Mobile-first responsive layout
+- [x] ManageRoom modal — Members tab — `ManageRoomModal.tsx`; searchable member list with role badges + promote/ban actions
+- [x] ManageRoom modal — Admins tab — lists current admins; owner can promote/demote members
+- [x] ManageRoom modal — Banned users tab — shows banned entries with unban button; calls `GET/DELETE /rooms/:id/bans`
+- [x] ManageRoom modal — Invitations tab — username input + Send invite; calls `POST /rooms/:id/invitations`
+- [x] ManageRoom modal — Settings tab (save + delete) — editable name/description/visibility; delete with confirmation calls `DELETE /rooms/:id`
+- [x] Public rooms catalog with search — `src/pages/PublicRooms.tsx`; debounced search, paginated cards, join/view button; "Joined" badge for already-joined rooms
+- [x] Contacts/friends list with presence dots in sidebar — already implemented in Phase 7 `LeftSidebar.tsx`; unread DM badges shown
+- [x] Friend request send + accept/reject flow — `src/pages/Contacts.tsx`; send by username, pending requests section with Accept/Reject, remove/ban from friends list
+- [x] Unread badge counters on rooms and contacts — `chat.store.ts` `incrementUnread`; badges rendered in `LeftSidebar` `RoomRow` and contacts section
+- [x] Clear unread on chat open + emit `read` — `Chat.tsx` `useEffect` on `activeContext.contextId`; calls `clearUnread` + emits `read` socket event
+- [x] Room invitation toast (accept/reject) — `useSocket.ts` `room_event` handler; shows `ToastProvider` toast with Accept/Reject action buttons calling `respondToInvitation`
+- [x] Sessions page — `src/pages/Sessions.tsx`; table of sessions with device info, IP, created/expires; current session highlighted; revoke button calls `DELETE /sessions/:id`
+- [x] Profile page (password change + account delete) — `src/pages/Profile.tsx`; shows username (immutable) + email; change password form; delete account with confirmation checkbox
+- [x] Mobile-first responsive layout — all pages use Tailwind mobile-first breakpoints; max-w containers for full pages; sidebar hidden on small screens via `hidden lg:flex`
 
 ### Optional — XMPP
 - [ ] Prosody sidecar containers in docker-compose
