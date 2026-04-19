@@ -5,6 +5,11 @@ import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Chat from './pages/Chat';
+import Sessions from './pages/Sessions';
+import Profile from './pages/Profile';
+import PublicRooms from './pages/PublicRooms';
+import Contacts from './pages/Contacts';
+import { ToastProvider } from './components/ui/Toast';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -22,63 +27,72 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Placeholder for Phase 8 pages (Sessions, Profile)
-function ComingSoon({ label }: { label: string }) {
-  return (
-    <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
-      <p className="text-xl text-gray-400">{label} — coming in Phase 8</p>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route
-          path="/login"
-          element={
-            <PublicOnly>
-              <Login />
-            </PublicOnly>
-          }
-        />
-        <Route
-          path="/register"
-          element={
-            <PublicOnly>
-              <Register />
-            </PublicOnly>
-          }
-        />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route
-          path="/"
-          element={
-            <RequireAuth>
-              <Chat />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/sessions"
-          element={
-            <RequireAuth>
-              <ComingSoon label="Sessions" />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <RequireAuth>
-              <ComingSoon label="Profile" />
-            </RequireAuth>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              <PublicOnly>
+                <Login />
+              </PublicOnly>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <PublicOnly>
+                <Register />
+              </PublicOnly>
+            }
+          />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route
+            path="/"
+            element={
+              <RequireAuth>
+                <Chat />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/sessions"
+            element={
+              <RequireAuth>
+                <Sessions />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <Profile />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/public-rooms"
+            element={
+              <RequireAuth>
+                <PublicRooms />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/contacts"
+            element={
+              <RequireAuth>
+                <Contacts />
+              </RequireAuth>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

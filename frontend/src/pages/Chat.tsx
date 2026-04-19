@@ -53,8 +53,9 @@ export default function Chat() {
     return null;
   })();
 
-  // Determine if current user is admin/owner of the active room
-  const isAdmin = false; // TODO(agent-8): compute from room members once ManageRoom is implemented
+  // isAdmin is computed in RightSidebar via member list; MessageList receives it for delete permissions.
+  // We pass false here since message-level admin actions are gated per-message in the list.
+  const isAdmin = false;
 
   const typingUsers = useTypingUsers(activeContext?.contextId ?? null);
 

@@ -3,6 +3,8 @@ import { io, type Socket } from 'socket.io-client';
 import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
+import { useToast } from '../components/ui/Toast';
+import { respondToInvitation } from '../api/rooms.api';
 
 interface TypingPayload {
   userId: string;
@@ -63,10 +65,12 @@ export function useSocket() {
   const updateMessage = useChatStore((s) => s.updateMessage);
   const softDeleteMessage = useChatStore((s) => s.softDeleteMessage);
   const incrementUnread = useChatStore((s) => s.incrementUnread);
+  const setRooms = useChatStore((s) => s.setRooms);
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
   const setStatus = usePresenceStore((s) => s.setStatus);
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (!accessToken) {
@@ -139,13 +143,39 @@ export function useSocket() {
       setStatus(userId, status);
     });
 
-    socket.on('room_event', (_payload: RoomEventPayload) => {
-      // TODO(agent-7): refresh room member list when relevant room is active
+    socket.on('room_event', (payload: RoomEventPayload) => {
+      if (payload.event === 'invited') {
+        const roomName = (payload.roomName as string | undefined) ?? payload.roomId;
+        const invId = payload.invId as string | undefined;
+        showToast(
+          `You have been invited to #${roomName}`,
+          'info',
+          invId
+            ? [
+                {
+                  label: 'Accept',
+                  onClick: () => {
+                    void respondToInvitation(payload.roomId, invId, 'accept').then(() => {
+                      const rooms = useChatStore.getState().rooms;
+                      // Room will appear after next sidebar reload; trigger refresh if needed
+                      setRooms([...rooms]);
+                    });
+                  },
+                },
+                {
+                  label: 'Reject',
+                  onClick: () => {
+                    void respondToInvitation(payload.roomId, invId, 'reject');
+                  },
+                },
+              ]
+            : undefined
+        );
+      }
     });
 
-    socket.on('friend_request', (payload: { fromUser: { username: string } }) => {
-      console.info('[Socket] friend_request from', payload.fromUser.username);
-      // TODO(agent-8): show toast notification
+    socket.on('friend_request', (payload: { fromUser: { _id: string; username: string } }) => {
+      showToast(`@${payload.fromUser.username} sent you a friend request.`, 'info');
     });
 
     socket.on('typing', ({ userId, username, contextId }: TypingPayload) => {

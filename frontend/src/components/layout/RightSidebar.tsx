@@ -3,6 +3,7 @@ import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
 import { getRoom, getMembers, sendInvitation } from '../../api/rooms.api';
+import { ManageRoomModal } from '../modals/ManageRoomModal';
 import type { Room } from '../../store/chat.store';
 
 interface RoomMember {
@@ -39,6 +40,7 @@ export function RightSidebar() {
   const [inviteUsername, setInviteUsername] = useState('');
   const [inviting, setInviting] = useState(false);
   const [inviteMsg, setInviteMsg] = useState('');
+  const [showManageModal, setShowManageModal] = useState(false);
 
   const activeRoom = activeRoomId ? rooms.find((r) => r._id === activeRoomId) : null;
 
@@ -183,7 +185,35 @@ export function RightSidebar() {
               )}
             </div>
           )}
+
+          <button
+            onClick={() => setShowManageModal(true)}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg transition-colors border border-gray-700"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Manage Room
+          </button>
         </div>
+      )}
+
+      {showManageModal && activeRoomId && roomDetails && (
+        <ManageRoomModal
+          roomId={activeRoomId}
+          roomName={roomDetails.name}
+          roomDescription={roomDetails.description}
+          roomIsPrivate={roomDetails.isPrivate}
+          currentUserRole={currentUserRole ?? 'member'}
+          onClose={() => setShowManageModal(false)}
+          onRoomDeleted={() => setRoomDetails(null)}
+          onRoomUpdated={(updates) => {
+            if (roomDetails) {
+              setRoomDetails({ ...roomDetails, ...updates } as typeof roomDetails);
+            }
+          }}
+        />
       )}
     </aside>
   );
