@@ -831,22 +831,22 @@ Track overall progress here. Each agent should mark items complete as they finis
 - [x] Account deletion with full cascade — deleteAccount() deletes owned rooms+messages+attachments, removes memberships, soft-deletes user
 
 ### Backend — Core API
-- [ ] Friend requests (send, accept, reject, remove)
-- [ ] User-to-user ban (DMs frozen, friendship terminated)
-- [ ] Public room catalog with text search
-- [ ] Private rooms with invitation-only access
-- [ ] Room creation, settings update, deletion (with cascade)
-- [ ] Admin/owner role promotion and demotion
-- [ ] Room ban/unban (remove-member = ban)
-- [ ] Room owner cannot leave (returns 400)
-- [ ] Cursor-based pagination for room and dialog messages
-- [ ] Message editing with `editedAt`
-- [ ] Message soft-deletion (author and admin)
-- [ ] Message replies with `replyToId`
-- [ ] 3 KB message byte-length limit enforced
-- [ ] File upload via Multer (20 MB / 3 MB limits)
-- [ ] Attachment access control (membership-gated download)
-- [ ] Cascade file deletion when room/dialog deleted
+- [x] Friend requests (send, accept, reject, remove) — `src/services/contact.service.ts` + `src/routes/contacts.routes.ts`
+- [x] User-to-user ban (DMs frozen, friendship terminated) — §12.3 cascade: deletes FriendRequest docs, creates UserBan; DM sending throws 403
+- [x] Public room catalog with text search — `GET /api/v1/rooms/public?q=&page=` with MongoDB `$text` search
+- [x] Private rooms with invitation-only access — invitation flow via `POST /rooms/:id/invitations` + `PUT /rooms/:id/invitations/:invId`
+- [x] Room creation, settings update, deletion (with cascade) — §12.2 cascade: messages → attachments → files on disk → members/bans/invitations → room
+- [x] Admin/owner role promotion and demotion — `POST/DELETE /rooms/:id/admins/:userId` (owner only)
+- [x] Room ban/unban (remove-member = ban) — single code path in `banMember()`; removes from RoomMember + creates RoomBan
+- [x] Room owner cannot leave (returns 400) — `DELETE /rooms/:id/leave` returns 400 if caller is owner
+- [x] Cursor-based pagination for room and dialog messages — `_id < before`, `sort({ _id: -1 }).limit(limit)`, `nextCursor` in response
+- [x] Message editing with `editedAt` — `PUT /rooms/:id/messages/:msgId` and `PUT /dialogs/:userId/messages/:msgId`
+- [x] Message soft-deletion (author and admin) — sets `deletedAt`; content replaced with `[deleted]` in responses
+- [x] Message replies with `replyToId` — accepted in POST body and stored on message document
+- [x] 3 KB message byte-length limit enforced — `Buffer.byteLength(content, 'utf8') > 3072` → 400
+- [x] File upload via Multer (20 MB / 3 MB limits) — `src/middleware/upload.middleware.ts`; image > 3 MB returns 413 in route handler
+- [x] Attachment access control (membership-gated download) — `GET /api/v1/attachments/:id` checks RoomMember / Dialog participation
+- [x] Cascade file deletion when room/dialog deleted — `room.service.ts` `cascadeDeleteRoomMessages()` unlinks files from disk
 
 ### Backend — Real-time
 - [ ] Socket.IO with Redis adapter
