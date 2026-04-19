@@ -36,13 +36,16 @@ export interface Room {
   unreadCount?: number;
 }
 
+/** GET /dialogs returns `id` and `otherUser.id`; `participants` may be absent. */
 export interface Dialog {
-  _id: string;
-  participants: string[];
+  _id?: string;
+  id?: string;
+  participants?: string[];
   otherUser: {
-    _id: string;
+    _id?: string;
+    id?: string;
     username: string;
-  };
+  } | null;
   lastMessage?: Message | null;
   updatedAt: string;
 }

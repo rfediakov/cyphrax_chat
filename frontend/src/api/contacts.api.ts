@@ -1,9 +1,23 @@
 import api from './axios';
 
+/** GET /contacts returns `id` (backend `toPublic`); accept `_id` if present. */
+export type ContactApiRow = {
+  id?: string;
+  _id?: string;
+  username: string;
+  email: string;
+};
+
 export interface Contact {
   _id: string;
   username: string;
   email: string;
+}
+
+export function normalizeContact(raw: ContactApiRow): Contact | null {
+  const _id = raw._id ?? raw.id;
+  if (!_id) return null;
+  return { _id, username: raw.username, email: raw.email };
 }
 
 /** Incoming pending request shape from GET /contacts/requests */
@@ -15,7 +29,7 @@ export interface PendingFriendRequest {
 }
 
 export const getContacts = () =>
-  api.get<{ contacts: Contact[] }>('/contacts');
+  api.get<{ contacts: ContactApiRow[] }>('/contacts');
 
 export const sendFriendRequest = (toUsername: string, message?: string) =>
   api.post('/contacts/request', { toUsername, message });
