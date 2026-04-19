@@ -232,6 +232,21 @@ async function requireFriends(userId: string, otherUserId: string): Promise<void
   }
 }
 
+/**
+ * Returns the dialogId string for the dialog between two users (creates it if needed).
+ * Used by routes that need the dialogId before a delete operation.
+ */
+export async function getDialogId(callerId: string, otherUserId: string): Promise<string | null> {
+  try {
+    const callerObjectId = new Types.ObjectId(callerId);
+    const otherObjectId = new Types.ObjectId(otherUserId);
+    const { dialog } = await findOrCreateDialog(callerObjectId, otherObjectId);
+    return dialog._id.toString();
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/v1/dialogs
 export async function getDialogs(userId: string) {
   const userObjectId = new Types.ObjectId(userId);
@@ -300,7 +315,7 @@ export async function sendDialogMessage(
   content: string,
   replyToId?: string,
   attachmentId?: string,
-) {
+): Promise<{ message: ReturnType<typeof serializeMessage>; dialogId: string }> {
   validateContent(content);
 
   await requireFriends(callerId, otherUserId);
@@ -309,6 +324,7 @@ export async function sendDialogMessage(
   const otherObjectId = new Types.ObjectId(otherUserId);
 
   const { dialog } = await findOrCreateDialog(callerObjectId, otherObjectId);
+  const dialogId = dialog._id.toString();
 
   const msg = await Message.create({
     dialogId: dialog._id,
@@ -321,7 +337,7 @@ export async function sendDialogMessage(
     await Attachment.findByIdAndUpdate(attachmentId, { messageId: msg._id });
   }
 
-  return serializeMessage(msg.toObject());
+  return { message: serializeMessage(msg.toObject()), dialogId };
 }
 
 // PUT /api/v1/dialogs/:userId/messages/:msgId
@@ -330,13 +346,14 @@ export async function editDialogMessage(
   otherUserId: string,
   msgId: string,
   content: string,
-) {
+): Promise<{ message: ReturnType<typeof serializeMessage>; dialogId: string }> {
   validateContent(content);
 
   const callerObjectId = new Types.ObjectId(callerId);
   const otherObjectId = new Types.ObjectId(otherUserId);
 
   const { dialog } = await findOrCreateDialog(callerObjectId, otherObjectId);
+  const dialogId = dialog._id.toString();
 
   const msg = await Message.findOne({
     _id: msgId,
@@ -356,7 +373,7 @@ export async function editDialogMessage(
   msg.editedAt = new Date();
   await msg.save();
 
-  return serializeMessage(msg.toObject());
+  return { message: serializeMessage(msg.toObject()), dialogId };
 }
 
 // DELETE /api/v1/dialogs/:userId/messages/:msgId  (soft-delete: author only)

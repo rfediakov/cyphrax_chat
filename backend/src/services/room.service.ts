@@ -355,7 +355,7 @@ export async function sendInvitation(
   roomId: string,
   callerId: string,
   username: string,
-): Promise<void> {
+): Promise<{ invitedUserId: string; invitationId: string }> {
   const roomObjectId = new Types.ObjectId(roomId);
 
   await requireAdminOrOwner(roomObjectId, callerId);
@@ -387,11 +387,16 @@ export async function sendInvitation(
     throw new ConflictError('Invitation already pending');
   }
 
-  await RoomInvitation.create({
+  const invitation = await RoomInvitation.create({
     roomId: roomObjectId,
     invitedBy: new Types.ObjectId(callerId),
     invitedUser: targetObjectId,
   });
+
+  return {
+    invitedUserId: targetObjectId.toString(),
+    invitationId: invitation._id.toString(),
+  };
 }
 
 // PUT /api/v1/rooms/:id/invitations/:invId  — accept or reject
@@ -400,7 +405,7 @@ export async function respondToInvitation(
   userId: string,
   invitationId: string,
   action: 'accept' | 'reject',
-): Promise<void> {
+): Promise<{ accepted: boolean }> {
   const roomObjectId = new Types.ObjectId(roomId);
   const userObjectId = new Types.ObjectId(userId);
 
@@ -425,4 +430,6 @@ export async function respondToInvitation(
       { upsert: true },
     );
   }
+
+  return { accepted: action === 'accept' };
 }

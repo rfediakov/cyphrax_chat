@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as roomService from '../services/room.service.js';
 import { BadRequestError } from '../lib/errors.js';
+import { getIo } from '../lib/io.js';
 
 const router = Router();
 
@@ -57,6 +58,8 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
     };
     const room = await roomService.updateRoom(id, req.user!._id, { name, description, visibility });
     res.json({ room });
+
+    getIo()?.to(`room:${id}`).emit('room_event', { event: 'updated', room });
   } catch (err) {
     next(err);
   }
@@ -66,6 +69,8 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
 router.delete('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as { id: string };
+    // Emit before deletion so members still in the socket room receive the event
+    getIo()?.to(`room:${id}`).emit('room_event', { event: 'deleted', roomId: id });
     await roomService.deleteRoom(id, req.user!._id);
     res.json({ message: 'Room deleted' });
   } catch (err) {
@@ -79,6 +84,10 @@ router.post('/:id/join', requireAuth, async (req: Request, res: Response, next: 
     const { id } = req.params as { id: string };
     await roomService.joinRoom(id, req.user!._id);
     res.json({ message: 'Joined room' });
+
+    getIo()
+      ?.to(`room:${id}`)
+      .emit('room_event', { event: 'member_joined', userId: req.user!._id, roomId: id });
   } catch (err) {
     next(err);
   }
@@ -93,6 +102,10 @@ router.delete(
       const { id } = req.params as { id: string };
       await roomService.leaveRoom(id, req.user!._id);
       res.json({ message: 'Left room' });
+
+      getIo()
+        ?.to(`room:${id}`)
+        .emit('room_event', { event: 'member_left', userId: req.user!._id, roomId: id });
     } catch (err) {
       next(err);
     }
@@ -123,6 +136,10 @@ router.post(
       const { id, userId } = req.params as { id: string; userId: string };
       await roomService.promoteAdmin(id, req.user!._id, userId);
       res.json({ message: 'User promoted to admin' });
+
+      getIo()
+        ?.to(`room:${id}`)
+        .emit('room_event', { event: 'admin_promoted', userId, roomId: id });
     } catch (err) {
       next(err);
     }
@@ -138,6 +155,10 @@ router.delete(
       const { id, userId } = req.params as { id: string; userId: string };
       await roomService.demoteAdmin(id, req.user!._id, userId);
       res.json({ message: 'User demoted to member' });
+
+      getIo()
+        ?.to(`room:${id}`)
+        .emit('room_event', { event: 'admin_demoted', userId, roomId: id });
     } catch (err) {
       next(err);
     }
@@ -153,6 +174,10 @@ router.post(
       const { id, userId } = req.params as { id: string; userId: string };
       await roomService.banMember(id, req.user!._id, userId);
       res.json({ message: 'User banned from room' });
+
+      getIo()
+        ?.to(`room:${id}`)
+        .emit('room_event', { event: 'member_banned', userId, roomId: id });
     } catch (err) {
       next(err);
     }
@@ -168,6 +193,10 @@ router.delete(
       const { id, userId } = req.params as { id: string; userId: string };
       await roomService.unbanMember(id, req.user!._id, userId);
       res.json({ message: 'User unbanned from room' });
+
+      getIo()
+        ?.to(`room:${id}`)
+        .emit('room_event', { event: 'member_unbanned', userId, roomId: id });
     } catch (err) {
       next(err);
     }
@@ -196,8 +225,17 @@ router.post(
       if (!username) {
         throw new BadRequestError('username is required');
       }
-      await roomService.sendInvitation(id, req.user!._id, username);
+      const { invitedUserId, invitationId } = await roomService.sendInvitation(
+        id,
+        req.user!._id,
+        username,
+      );
       res.status(201).json({ message: 'Invitation sent' });
+
+      // Notify the invited user directly on their personal room channel
+      getIo()
+        ?.to(`user:${invitedUserId}`)
+        .emit('room_event', { event: 'invited', roomId: id, invitationId });
     } catch (err) {
       next(err);
     }
@@ -215,8 +253,14 @@ router.put(
       if (action !== 'accept' && action !== 'reject') {
         throw new BadRequestError('action must be "accept" or "reject"');
       }
-      await roomService.respondToInvitation(id, req.user!._id, invId, action);
+      const { accepted } = await roomService.respondToInvitation(id, req.user!._id, invId, action);
       res.json({ message: `Invitation ${action}ed` });
+
+      if (accepted) {
+        getIo()
+          ?.to(`room:${id}`)
+          .emit('room_event', { event: 'member_joined', userId: req.user!._id, roomId: id });
+      }
     } catch (err) {
       next(err);
     }

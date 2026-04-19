@@ -849,15 +849,15 @@ Track overall progress here. Each agent should mark items complete as they finis
 - [x] Cascade file deletion when room/dialog deleted — `room.service.ts` `cascadeDeleteRoomMessages()` unlinks files from disk
 
 ### Backend — Real-time
-- [ ] Socket.IO with Redis adapter
-- [ ] Socket auth middleware (reject unauthenticated connections)
-- [ ] On connect: join personal room + all room/dialog rooms
-- [ ] Presence (online / AFK / offline) with Redis hash
-- [ ] Multi-tab AFK logic (all tabs idle > 60 s → AFK)
-- [ ] Presence propagation latency < 2 s
-- [ ] `typing` event broadcast (excluding sender)
-- [ ] `read` event updates LastRead
-- [ ] All REST mutations emit corresponding Socket.IO events
+- [x] Socket.IO with Redis adapter — `src/socket/index.ts`; `createAdapter(pubClient, subClient)` attached to HTTP server
+- [x] Socket auth middleware (reject unauthenticated connections) — JWT verified in `io.use()`; invalid tokens call `next(new Error('Unauthorized'))`
+- [x] On connect: join personal room + all room/dialog rooms — `user:<id>`, `room:<id>`, `dialog:<id>` joined on authenticated connection
+- [x] Presence (online / AFK / offline) with Redis hash — `presence:<userId>` hash with `socketId→timestamp`; TTL 90 s; in `src/presence/presence.manager.ts`
+- [x] Multi-tab AFK logic (all tabs idle > 60 s → AFK) — `evaluatePresence()` checks max timestamp across all sockets; < 60 s → online, else → afk
+- [x] Presence propagation latency < 2 s — Redis pub/sub `presence_updates` channel; `subscribePresence()` fans out to all room/dialog channels
+- [x] `typing` event broadcast (excluding sender) — `src/socket/handlers/typing.handler.ts`; `socket.to(target).emit('typing', ...)`
+- [x] `read` event updates LastRead — `src/socket/handlers/read.handler.ts`; upserts `LastRead` document for room or dialog
+- [x] All REST mutations emit corresponding Socket.IO events — `getIo()` used in all message/room/contacts routes; `message`, `message_edited`, `message_deleted`, `room_event`, `friend_request` emitted to correct Socket.IO rooms
 
 ### Frontend — Foundation
 - [ ] Zustand stores (auth, chat, presence)
