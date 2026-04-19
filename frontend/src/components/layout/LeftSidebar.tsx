@@ -126,7 +126,12 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
   );
 }
 
-export function LeftSidebar() {
+interface LeftSidebarProps {
+  /** Hide on small screens while a chat is open so the message composer can use full width. */
+  mobileHidden?: boolean;
+}
+
+export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
   const { activeRoomId, activeDialogUserId, rooms, dialogs, unreadCounts, setRooms, setDialogs, setActiveRoom, setActiveDialog } = useChatStore();
   const currentUser = useAuthStore((s) => s.user);
   const { getStatus } = usePresence();
@@ -182,7 +187,11 @@ export function LeftSidebar() {
   };
 
   return (
-    <aside className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col shrink-0 overflow-hidden">
+    <aside
+      className={`w-full md:w-64 bg-gray-900 border-r border-gray-700 flex flex-col shrink-0 overflow-hidden ${
+        mobileHidden ? 'hidden md:flex' : 'flex'
+      }`}
+    >
       {/* Search */}
       <div className="p-3 border-b border-gray-700">
         <div className="relative">
