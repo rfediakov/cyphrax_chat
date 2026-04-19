@@ -860,14 +860,14 @@ Track overall progress here. Each agent should mark items complete as they finis
 - [x] All REST mutations emit corresponding Socket.IO events — `getIo()` used in all message/room/contacts routes; `message`, `message_edited`, `message_deleted`, `room_event`, `friend_request` emitted to correct Socket.IO rooms
 
 ### Frontend — Foundation
-- [ ] Zustand stores (auth, chat, presence)
-- [ ] Axios client with token injection + refresh interceptor
-- [ ] Socket.IO hook with all event handlers
-- [ ] React Router with auth guard
-- [ ] Login page
-- [ ] Register page
-- [ ] ForgotPassword page
-- [ ] ResetPassword page
+- [x] Zustand stores (auth, chat, presence) — `src/store/{auth,chat,presence}.store.ts`; auth persists user to localStorage; chat holds messages/rooms/dialogs/unread; presence holds per-user status
+- [x] Axios client with token injection + refresh interceptor — `src/api/axios.ts`; Bearer token injected from auth store; 401 triggers one refresh attempt with queue-based retry
+- [x] Socket.IO hook with all event handlers — `src/hooks/useSocket.ts`; connects on token availability; handles `message`, `message_edited`, `message_deleted`, `presence`, `room_event`, `friend_request`, `typing`
+- [x] React Router with auth guard — `src/App.tsx`; `RequireAuth` → `/login`; `PublicOnly` → `/`; routes for all auth pages + placeholder Chat/Sessions/Profile
+- [x] Login page — `src/pages/Login.tsx`; email + password + keep-signed-in checkbox; error display; link to register/forgot-password
+- [x] Register page — `src/pages/Register.tsx`; email + username + password + confirm; client-side password match validation
+- [x] ForgotPassword page — `src/pages/ForgotPassword.tsx`; email input; success confirmation text; links back to sign-in
+- [x] ResetPassword page — `src/pages/ResetPassword.tsx`; reads `?token=` from URL; new password + confirm; on success redirects to `/login`
 
 ### Frontend — Chat
 - [ ] Three-column main layout (LeftSidebar / MessageList / RightSidebar)

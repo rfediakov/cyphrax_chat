@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as authService from '../services/auth.service.js';
+import { User } from '../models/user.model.js';
 import { BadRequestError } from '../lib/errors.js';
 
 const router = Router();
@@ -33,8 +34,14 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     if (!email || !username || !password) {
       throw new BadRequestError('email, username, and password are required');
     }
-    const user = await authService.register({ email, username, password });
-    res.status(201).json({ user });
+    const registeredUser = await authService.register({ email, username, password });
+    const meta = { userAgent: req.headers['user-agent'], ipAddress: req.ip };
+    const { accessToken, refreshToken } = await authService.login({ email, password }, meta);
+    setRefreshCookie(res, refreshToken);
+    res.status(201).json({
+      accessToken,
+      user: { _id: registeredUser.id, email: registeredUser.email, username: registeredUser.username },
+    });
   } catch (err) {
     next(err);
   }
@@ -53,7 +60,13 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     };
     const { accessToken, refreshToken } = await authService.login({ email, password }, meta);
     setRefreshCookie(res, refreshToken);
-    res.json({ accessToken });
+    const user = await User.findOne({ email: email.toLowerCase(), deletedAt: null })
+      .select('_id email username')
+      .lean();
+    res.json({
+      accessToken,
+      user: { _id: String(user!._id), email: user!.email, username: user!.username },
+    });
   } catch (err) {
     next(err);
   }
