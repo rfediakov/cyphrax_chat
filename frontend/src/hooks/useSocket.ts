@@ -102,16 +102,35 @@ export function useSocket() {
 
     const activityThrottle = { current: false };
 
+    const channel = new BroadcastChannel('presence_activity');
+
     const emitActivity = () => {
-      if (!socketSingleton?.connected || activityThrottle.current) return;
+      if (!socketSingleton?.connected) return;
+      if (document.visibilityState !== 'visible') return;
+      if (activityThrottle.current) return;
       socketSingleton.emit('activity');
       activityThrottle.current = true;
+      channel.postMessage('activity');
       setTimeout(() => { activityThrottle.current = false; }, 10_000);
+    };
+
+    // When a sibling tab reports activity, reset our throttle so we don't
+    // incorrectly go AFK — the active tab already emitted to the server.
+    channel.onmessage = () => {
+      activityThrottle.current = true;
+      setTimeout(() => { activityThrottle.current = false; }, 10_000);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        emitActivity();
+      }
     };
 
     window.addEventListener('mousemove', emitActivity, { passive: true });
     window.addEventListener('keydown', emitActivity, { passive: true });
     window.addEventListener('pointerdown', emitActivity, { passive: true });
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     socket.on('connect', () => {
       console.log('[Socket] connected', socket.id);
@@ -228,6 +247,8 @@ export function useSocket() {
       window.removeEventListener('mousemove', emitActivity);
       window.removeEventListener('keydown', emitActivity);
       window.removeEventListener('pointerdown', emitActivity);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      channel.close();
     };
   }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
