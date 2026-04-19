@@ -28,11 +28,24 @@ function validateContent(content: string): void {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function serializeMessage(msg: any) {
-  const { _id, ...rest } = msg as Record<string, unknown>;
+  const { _id, authorId, ...rest } = msg as Record<string, unknown>;
+
+  // authorId may be a populated User object ({ _id, username }) or a raw ObjectId
+  let author: { _id: string; username: string };
+  if (authorId && typeof authorId === 'object' && 'username' in (authorId as object)) {
+    const u = authorId as { _id: unknown; username: string };
+    author = { _id: String(u._id), username: u.username };
+  } else {
+    author = { _id: String(authorId), username: 'Unknown' };
+  }
+
   return {
-    id: String(_id),
+    _id: String(_id),
     ...rest,
-    content: msg.deletedAt ? '[deleted]' : (msg.content as string),
+    author,
+    content: (msg as { deletedAt?: unknown; content: string }).deletedAt
+      ? '[deleted]'
+      : (msg as { content: string }).content,
   };
 }
 
@@ -66,6 +79,7 @@ export async function getRoomMessages(
   const messages = await Message.find(filter)
     .sort({ _id: -1 })
     .limit(limit)
+    .populate<{ authorId: { _id: Types.ObjectId; username: string } }>('authorId', '_id username')
     .lean();
 
   const nextCursor =
@@ -109,6 +123,7 @@ export async function sendRoomMessage(
     await Attachment.findByIdAndUpdate(attachmentId, { messageId: msg._id });
   }
 
+  await msg.populate('authorId', '_id username');
   return serializeMessage(msg.toObject());
 }
 
@@ -138,6 +153,7 @@ export async function editRoomMessage(
   msg.content = content;
   msg.editedAt = new Date();
   await msg.save();
+  await msg.populate('authorId', '_id username');
 
   return serializeMessage(msg.toObject());
 }
@@ -297,6 +313,7 @@ export async function getDialogMessages(
   const messages = await Message.find(filter)
     .sort({ _id: -1 })
     .limit(limit)
+    .populate<{ authorId: { _id: Types.ObjectId; username: string } }>('authorId', '_id username')
     .lean();
 
   const nextCursor =
@@ -337,6 +354,7 @@ export async function sendDialogMessage(
     await Attachment.findByIdAndUpdate(attachmentId, { messageId: msg._id });
   }
 
+  await msg.populate('authorId', '_id username');
   return { message: serializeMessage(msg.toObject()), dialogId };
 }
 
@@ -372,6 +390,7 @@ export async function editDialogMessage(
   msg.content = content;
   msg.editedAt = new Date();
   await msg.save();
+  await msg.populate('authorId', '_id username');
 
   return { message: serializeMessage(msg.toObject()), dialogId };
 }

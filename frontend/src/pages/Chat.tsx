@@ -4,6 +4,7 @@ import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { RightSidebar } from '../components/layout/RightSidebar';
 import { MessageList } from '../components/chat/MessageList';
 import { MessageInput } from '../components/chat/MessageInput';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useChatStore } from '../store/chat.store';
 import { useSocket } from '../hooks/useSocket';
 import { typingUsers as typingUsersMap } from '../hooks/useSocket';
@@ -113,14 +114,16 @@ export default function Chat() {
               </div>
 
               {/* Messages */}
-              <MessageList
-                contextId={activeContext.contextId}
-                contextType={activeContext.contextType}
-                dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
-                isAdmin={isAdmin}
-                typingUsers={typingUsers}
-                onReply={handleReply}
-              />
+              <ErrorBoundary key={activeContext.contextId}>
+                <MessageList
+                  contextId={activeContext.contextId}
+                  contextType={activeContext.contextType}
+                  dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
+                  isAdmin={isAdmin}
+                  typingUsers={typingUsers}
+                  onReply={handleReply}
+                />
+              </ErrorBoundary>
 
               {/* Input */}
               <MessageInput

@@ -115,7 +115,7 @@ export const unbanMember = (roomId: string, userId: string) =>
   api.delete(`/rooms/${roomId}/ban/${userId}`);
 
 export const getBans = (roomId: string) =>
-  api.get<{ data: unknown[] }>(`/rooms/${roomId}/bans`);
+  api.get<{ bans: unknown[] }>(`/rooms/${roomId}/bans`);
 
 export const sendInvitation = (roomId: string, username: string) =>
   api.post(`/rooms/${roomId}/invitations`, { username });
