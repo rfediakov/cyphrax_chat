@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
-import { getContacts } from '../../api/contacts.api';
+import { getContacts, normalizeContact } from '../../api/contacts.api';
 import { getMyRooms, createRoom, normalizeRoom } from '../../api/rooms.api';
 import { getDialogs } from '../../api/messages.api';
 import type { Contact } from '../../api/contacts.api';
 import type { Room, Dialog } from '../../store/chat.store';
+import { findDialogWithUser, getDialogRecordId } from '../../lib/dialogs';
 
 type PresenceStatus = 'online' | 'afk' | 'offline';
 
@@ -152,7 +153,11 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
       ]);
       setRooms((roomsRes.data.rooms ?? []).map((r) => normalizeRoom(r as unknown as Record<string, unknown>)));
       setDialogs(dialogsRes.data.dialogs ?? []);
-      setContacts(contactsRes.data.contacts ?? []);
+      setContacts(
+        (contactsRes.data.contacts ?? [])
+          .map(normalizeContact)
+          .filter((c): c is Contact => c !== null)
+      );
     } catch {
       // Silently fail — user might not be fully loaded yet
     }
@@ -169,7 +174,7 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
   const filteredContacts = safeContacts.filter((c) => c.username.toLowerCase().includes(search.toLowerCase()));
 
   const getDialogForContact = (contact: Contact): Dialog | undefined =>
-    dialogs.find((d) => d.participants.includes(contact._id));
+    findDialogWithUser(dialogs, contact._id);
 
   const handleRoomClick = (room: Room) => {
     setActiveRoom(room._id);
@@ -257,7 +262,7 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
         >
           {filteredContacts.map((contact) => {
             const dialog = getDialogForContact(contact);
-            const dialogId = dialog?._id;
+            const dialogId = dialog ? getDialogRecordId(dialog) : '';
             const unread = dialogId ? (unreadCounts[dialogId] ?? 0) : 0;
             return (
               <button

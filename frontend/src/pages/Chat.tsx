@@ -10,6 +10,7 @@ import { useSocket } from '../hooks/useSocket';
 import { typingUsers as typingUsersMap } from '../hooks/useSocket';
 import { useAuthStore } from '../store/auth.store';
 import type { Message } from '../store/chat.store';
+import { findDialogWithUser, getDialogRecordId } from '../lib/dialogs';
 
 function useTypingUsers(contextId: string | null) {
   const [, forceUpdate] = useState(0);
@@ -44,9 +45,10 @@ export default function Chat() {
       return { contextId: activeRoomId, contextType: 'room' as const, name: room?.name ?? activeRoomId };
     }
     if (activeDialogUserId) {
-      const dialog = dialogs.find((d) => d.participants.includes(activeDialogUserId));
+      const dialog = findDialogWithUser(dialogs, activeDialogUserId);
+      const dialogRecordId = dialog ? getDialogRecordId(dialog) : '';
       return {
-        contextId: dialog?._id ?? activeDialogUserId,
+        contextId: dialogRecordId || activeDialogUserId,
         contextType: 'dialog' as const,
         dialogUserId: activeDialogUserId,
         name: dialog?.otherUser?.username ?? activeDialogUserId,

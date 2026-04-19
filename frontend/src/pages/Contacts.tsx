@@ -11,7 +11,8 @@ import {
   banUser,
   unbanUser,
 } from '../api/contacts.api';
-import type { Contact, PendingFriendRequest } from '../api/contacts.api';
+import { normalizeContact, type Contact, type PendingFriendRequest } from '../api/contacts.api';
+import { findDialogWithUser, getDialogRecordId } from '../lib/dialogs';
 
 type PresenceStatus = 'online' | 'afk' | 'offline';
 
@@ -58,7 +59,11 @@ export default function Contacts() {
         getContacts(),
         getPendingRequests(),
       ]);
-      setContacts(contactsRes.data.contacts ?? []);
+      setContacts(
+        (contactsRes.data.contacts ?? [])
+          .map(normalizeContact)
+          .filter((c): c is Contact => c !== null)
+      );
       setPendingRequests(requestsRes.data.requests ?? []);
     } catch {
       setError('Failed to load contacts.');
@@ -146,9 +151,10 @@ export default function Contacts() {
   };
 
   const getDialogUnread = (contact: Contact): number => {
-    const dialog = dialogs.find((d) => d.participants.includes(contact._id));
+    const dialog = findDialogWithUser(dialogs, contact._id);
     if (!dialog) return 0;
-    return unreadCounts[dialog._id] ?? 0;
+    const dialogId = getDialogRecordId(dialog);
+    return unreadCounts[dialogId] ?? 0;
   };
 
   return (
