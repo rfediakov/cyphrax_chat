@@ -22,14 +22,35 @@ interface MessagePayload {
   [key: string]: unknown;
 }
 
+interface WrappedMessagePayload {
+  message: MessagePayload;
+}
+
 interface RoomEventPayload {
   event: string;
   roomId: string;
   [key: string]: unknown;
 }
 
-// Ephemeral typing state, not in Zustand since it's transient
+// Ephemeral typing state keyed by contextId — not in Zustand since it's transient
 export const typingUsers: Record<string, { userId: string; username: string; timeout: ReturnType<typeof setTimeout> }[]> = {};
+
+function addTypingUser(contextId: string, userId: string, username: string) {
+  if (!typingUsers[contextId]) typingUsers[contextId] = [];
+  const existing = typingUsers[contextId].find((u) => u.userId === userId);
+  if (existing) {
+    clearTimeout(existing.timeout);
+    existing.timeout = setTimeout(() => removeTypingUser(contextId, userId), 3000);
+    return;
+  }
+  const timeout = setTimeout(() => removeTypingUser(contextId, userId), 3000);
+  typingUsers[contextId].push({ userId, username, timeout });
+}
+
+function removeTypingUser(contextId: string, userId: string) {
+  if (!typingUsers[contextId]) return;
+  typingUsers[contextId] = typingUsers[contextId].filter((u) => u.userId !== userId);
+}
 
 let socketSingleton: Socket | null = null;
 
@@ -87,7 +108,7 @@ export function useSocket() {
       console.warn('[Socket] connection error:', err.message);
     });
 
-    socket.on('message', (msg: MessagePayload) => {
+    socket.on('message', ({ message: msg }: WrappedMessagePayload) => {
       const contextId = msg.roomId ?? msg.dialogId;
       if (!contextId) return;
 
@@ -102,16 +123,16 @@ export function useSocket() {
       }
     });
 
-    socket.on('message_edited', (msg: MessagePayload) => {
+    socket.on('message_edited', ({ message: msg }: WrappedMessagePayload) => {
       const contextId = msg.roomId ?? msg.dialogId;
       if (!contextId) return;
       updateMessage(contextId, msg as unknown as Parameters<typeof updateMessage>[1]);
     });
 
-    socket.on('message_deleted', (payload: { msgId: string; roomId?: string; dialogId?: string }) => {
+    socket.on('message_deleted', (payload: { messageId: string; roomId?: string; dialogId?: string }) => {
       const contextId = payload.roomId ?? payload.dialogId;
       if (!contextId) return;
-      softDeleteMessage(contextId, payload.msgId);
+      softDeleteMessage(contextId, payload.messageId);
     });
 
     socket.on('presence', ({ userId, status }: PresencePayload) => {
@@ -127,8 +148,8 @@ export function useSocket() {
       // TODO(agent-8): show toast notification
     });
 
-    socket.on('typing', (_payload: TypingPayload) => {
-      // TODO(agent-7): manage ephemeral typing indicators in component state
+    socket.on('typing', ({ userId, username, contextId }: TypingPayload) => {
+      addTypingUser(contextId, userId, username);
     });
 
     return () => {

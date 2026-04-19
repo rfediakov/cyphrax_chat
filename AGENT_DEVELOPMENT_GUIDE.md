@@ -870,20 +870,20 @@ Track overall progress here. Each agent should mark items complete as they finis
 - [x] ResetPassword page — `src/pages/ResetPassword.tsx`; reads `?token=` from URL; new password + confirm; on success redirects to `/login`
 
 ### Frontend — Chat
-- [ ] Three-column main layout (LeftSidebar / MessageList / RightSidebar)
-- [ ] Message list with cursor-based infinite scroll
-- [ ] Auto-scroll to bottom; no forced scroll when reading history
-- [ ] Reply quoted preview in MessageItem
-- [ ] "(edited)" indicator in MessageItem
-- [ ] "(message deleted)" placeholder in MessageItem
-- [ ] Attachment inline preview (images) and download card (files)
-- [ ] MessageInput with emoji picker
-- [ ] MessageInput with file upload button
-- [ ] MessageInput with paste-to-upload
-- [ ] MessageInput reply banner
-- [ ] Typing indicator (emit + display)
-- [ ] Activity tracking (emit on interaction, throttled)
-- [ ] Real-time message CRUD via socket events
+- [x] Three-column main layout (LeftSidebar / MessageList / RightSidebar) — `src/pages/Chat.tsx` + `src/components/layout/`; TopNav, LeftSidebar (accordion rooms/contacts), RightSidebar (members/invite)
+- [x] Message list with cursor-based infinite scroll — `src/components/chat/MessageList.tsx` + `src/hooks/useInfiniteMessages.ts`; scroll-to-top triggers older page load
+- [x] Auto-scroll to bottom; no forced scroll when reading history — isAtBottomRef tracks scroll position; smooth scroll only when already at bottom
+- [x] Reply quoted preview in MessageItem — `src/components/chat/MessageItem.tsx`; ReplyPreview component shows quoted author + excerpt
+- [x] "(edited)" indicator in MessageItem — shown as grey italic label when `editedAt` is set
+- [x] "(message deleted)" placeholder in MessageItem — shown as italic text when `deletedAt` is set; attachments hidden
+- [x] Attachment inline preview (images) and download card (files) — AttachmentPreview in MessageItem; images shown inline, other files as card with size
+- [x] MessageInput with emoji picker — `src/components/chat/MessageInput.tsx`; `emoji-picker-react` opens on button click; selected emoji appended to text
+- [x] MessageInput with file upload button — paperclip button triggers hidden file input; uploads via `POST /attachments/upload`; pending attachment shown
+- [x] MessageInput with paste-to-upload — paste event handler detects image files and auto-uploads
+- [x] MessageInput reply banner — dismissible banner above input showing quoted author + excerpt when replying
+- [x] Typing indicator (emit + display) — emit `typing` socket event throttled to 1 s; `addTypingUser` in `useSocket.ts` auto-clears after 3 s; displayed in MessageList
+- [x] Activity tracking (emit on interaction, throttled) — `activity` socket event emitted on keypress/mousemove throttled to 10 s; also emitted on window mousemove in Chat.tsx
+- [x] Real-time message CRUD via socket events — `useSocket` hook updates chat store on `message`, `message_edited`, `message_deleted` events; typing handled via `typingUsers` map
 
 ### Frontend — Features
 - [ ] ManageRoom modal — Members tab
