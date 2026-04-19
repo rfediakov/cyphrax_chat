@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
+import { fetchPresenceStatuses } from '../api/presence.api';
 import { useToast } from '../components/ui/Toast';
 import { respondToInvitation } from '../api/rooms.api';
 
@@ -70,6 +71,7 @@ export function useSocket() {
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
   const setStatus = usePresenceStore((s) => s.setStatus);
+  const bulkSetStatuses = usePresenceStore((s) => s.bulkSetStatuses);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -101,6 +103,25 @@ export function useSocket() {
     socket.on('connect', () => {
       console.log('[Socket] connected', socket.id);
       setConnected(true);
+
+      void (async () => {
+        try {
+          const { dialogs } = useChatStore.getState();
+          const peerIds = new Set<string>();
+
+          for (const d of dialogs) {
+            const id = d.otherUser?._id ?? d.otherUser?.id;
+            if (id) peerIds.add(id);
+          }
+
+          if (peerIds.size === 0) return;
+
+          const statuses = await fetchPresenceStatuses([...peerIds]);
+          bulkSetStatuses(statuses);
+        } catch (err) {
+          console.warn('[Presence] Initial sync failed:', err);
+        }
+      })();
     });
 
     socket.on('disconnect', () => {
@@ -195,6 +216,37 @@ export function useSocket() {
       // Do not disconnect on every render
     };
   }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-sync presence when dialogs are loaded after the socket already connected
+  // (handles the race condition where connect fires before dialogs are fetched)
+  const dialogs = useChatStore((s) => s.dialogs);
+  const hasSyncedRef = useRef(false);
+
+  useEffect(() => {
+    if (!connected) {
+      hasSyncedRef.current = false;
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    if (!connected || dialogs.length === 0 || hasSyncedRef.current) return;
+    hasSyncedRef.current = true;
+
+    void (async () => {
+      try {
+        const peerIds = new Set<string>();
+        for (const d of dialogs) {
+          const id = d.otherUser?._id ?? d.otherUser?.id;
+          if (id) peerIds.add(id);
+        }
+        if (peerIds.size === 0) return;
+        const statuses = await fetchPresenceStatuses([...peerIds]);
+        bulkSetStatuses(statuses);
+      } catch (err) {
+        console.warn('[Presence] Deferred sync failed:', err);
+      }
+    })();
+  }, [connected, dialogs, bulkSetStatuses]);
 
   return { socket: socketRef.current, connected };
 }
