@@ -6,12 +6,11 @@ export interface Contact {
   email: string;
 }
 
-export interface FriendRequest {
-  _id: string;
-  fromUser: Contact;
-  toUser: Contact;
+/** Incoming pending request shape from GET /contacts/requests */
+export interface PendingFriendRequest {
+  id: string;
+  fromUser: { id: string; username: string; email: string };
   message?: string;
-  status: 'pending' | 'accepted' | 'rejected';
   createdAt: string;
 }
 
@@ -22,7 +21,7 @@ export const sendFriendRequest = (toUsername: string, message?: string) =>
   api.post('/contacts/request', { toUsername, message });
 
 export const getPendingRequests = () =>
-  api.get<{ data: FriendRequest[] }>('/contacts/requests');
+  api.get<{ requests: PendingFriendRequest[] }>('/contacts/requests');
 
 export const respondToRequest = (
   requestId: string,

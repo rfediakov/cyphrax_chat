@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import * as contactService from '../services/contact.service.js';
 import { BadRequestError } from '../lib/errors.js';
 import { getIo } from '../lib/io.js';
+import { User } from '../models/user.model.js';
 
 const router = Router();
 
@@ -26,9 +27,10 @@ router.post('/request', requireAuth, async (req: Request, res: Response, next: N
     const { toUserId } = await contactService.sendFriendRequest(req.user!._id, toUsername, message);
     res.status(201).json({ message: 'Friend request sent' });
 
-    getIo()
-      ?.to(`user:${toUserId}`)
-      .emit('friend_request', { fromUserId: req.user!._id });
+    const from = await User.findById(req.user!._id).select('username').lean();
+    getIo()?.to(`user:${toUserId}`).emit('friend_request', {
+      fromUser: { _id: req.user!._id, username: from?.username ?? 'Someone' },
+    });
   } catch (err) {
     next(err);
   }
