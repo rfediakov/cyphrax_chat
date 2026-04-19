@@ -8,6 +8,11 @@ import { AppError } from './lib/errors.js';
 import authRoutes from './routes/auth.routes.js';
 import sessionsRoutes from './routes/sessions.routes.js';
 import usersRoutes from './routes/users.routes.js';
+import contactsRoutes from './routes/contacts.routes.js';
+import roomsRoutes from './routes/rooms.routes.js';
+import messagesRoutes from './routes/messages.routes.js';
+import dialogsRoutes from './routes/dialogs.routes.js';
+import attachmentsRoutes from './routes/attachments.routes.js';
 
 const app = express();
 
@@ -23,6 +28,12 @@ app.get('/', (_req, res) => {
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/sessions', sessionsRoutes);
 app.use('/api/v1/users', usersRoutes);
+app.use('/api/v1/contacts', contactsRoutes);
+app.use('/api/v1/rooms', roomsRoutes);
+// Mount room message routes as sub-routes with mergeParams
+app.use('/api/v1/rooms/:id/messages', messagesRoutes);
+app.use('/api/v1/dialogs', dialogsRoutes);
+app.use('/api/v1/attachments', attachmentsRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
