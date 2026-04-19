@@ -15,6 +15,7 @@ import roomsRoutes from './routes/rooms.routes.js';
 import messagesRoutes from './routes/messages.routes.js';
 import dialogsRoutes from './routes/dialogs.routes.js';
 import attachmentsRoutes from './routes/attachments.routes.js';
+import presenceRoutes from './routes/presence.routes.js';
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/v1/rooms', roomsRoutes);
 app.use('/api/v1/rooms/:id/messages', messagesRoutes);
 app.use('/api/v1/dialogs', dialogsRoutes);
 app.use('/api/v1/attachments', attachmentsRoutes);
+app.use('/api/v1/presence', presenceRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
