@@ -108,7 +108,7 @@ export function ManageRoomModal({
     setActionError('');
     try {
       const res = await getBans(roomId);
-      setBans((res.data.data ?? []).map((b) => normalizeBan(b as Record<string, unknown>)));
+      setBans((res.data.bans ?? []).map((b) => normalizeBan(b as Record<string, unknown>)));
     } catch {
       setActionError('Failed to load bans.');
     } finally {
