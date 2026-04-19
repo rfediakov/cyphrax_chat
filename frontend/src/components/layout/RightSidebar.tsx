@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
-import { getRoom, getMembers, sendInvitation } from '../../api/rooms.api';
+import { getRoom, getMembers, normalizeMember, sendInvitation } from '../../api/rooms.api';
 import { ManageRoomModal } from '../modals/ManageRoomModal';
 import type { Room } from '../../store/chat.store';
 
@@ -52,7 +52,7 @@ export function RightSidebar() {
         getMembers(roomId),
       ]);
       setRoomDetails(roomRes.data.room);
-      setMembers((membersRes.data.members ?? []) as RoomMember[]);
+      setMembers((membersRes.data.members ?? []).map((m) => normalizeMember(m as Record<string, unknown>)));
     } catch {
       setRoomDetails(null);
       setMembers([]);
@@ -85,7 +85,7 @@ export function RightSidebar() {
     }
   };
 
-  const safeMembers = members ?? [];
+  const safeMembers = (members ?? []).filter((m) => m?.userId?._id);
   const currentUserRole = safeMembers.find((m) => m.userId._id === currentUser?._id)?.role;
   const isAdminOrOwner = currentUserRole === 'admin' || currentUserRole === 'owner';
 
@@ -95,7 +95,7 @@ export function RightSidebar() {
 
   if (activeDialogUserId && !activeRoomId) {
     return (
-      <aside className="w-56 bg-gray-900 border-l border-gray-700 flex flex-col shrink-0 p-4 hidden lg:flex">
+      <aside className="w-56 bg-gray-900 border-l border-gray-700 hidden lg:flex flex-col shrink-0 p-4">
         <p className="text-xs text-gray-500 text-center">Direct message</p>
       </aside>
     );

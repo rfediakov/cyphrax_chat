@@ -6,6 +6,16 @@ import { getIo } from '../lib/io.js';
 
 const router = Router();
 
+// GET /api/v1/rooms/mine — rooms the current user is a member of
+router.get('/mine', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await roomService.getMyRooms(req.user!._id);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/v1/rooms/public?q=&page=
 router.get('/public', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { getPublicRooms, joinRoom } from '../api/rooms.api';
+import { getPublicRooms, joinRoom, normalizeRoom } from '../api/rooms.api';
 import { useChatStore } from '../store/chat.store';
 import type { Room } from '../store/chat.store';
 
@@ -28,7 +28,7 @@ export default function PublicRooms() {
     setError('');
     try {
       const res = await getPublicRooms({ q: q || undefined, page: p });
-      const fetched: Room[] = res.data.rooms ?? [];
+      const fetched: Room[] = (res.data.rooms ?? []).map((r) => normalizeRoom(r as unknown as Record<string, unknown>));
       const total: number = res.data.total ?? 0;
       if (append) {
         setRooms((prev) => [...prev, ...fetched]);
@@ -38,6 +38,7 @@ export default function PublicRooms() {
       setHasMore(p * PAGE_SIZE < total);
     } catch {
       setError('Failed to load rooms.');
+      if (!append) setRooms([]);
     } finally {
       setLoading(false);
     }
@@ -66,7 +67,7 @@ export default function PublicRooms() {
     try {
       await joinRoom(room._id);
       setJoinedIds((prev) => new Set([...prev, room._id]));
-      setMyRooms([...myRooms, room]);
+      setMyRooms([...myRooms, room]); // room already normalized
     } catch {
       // Room might already be joined or another error
       setJoinedIds((prev) => new Set([...prev, room._id]));

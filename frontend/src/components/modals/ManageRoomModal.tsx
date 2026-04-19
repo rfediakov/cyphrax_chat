@@ -13,6 +13,8 @@ import {
   sendInvitation,
   updateRoom,
   deleteRoom,
+  normalizeMember,
+  normalizeBan,
 } from '../../api/rooms.api';
 
 type Tab = 'members' | 'admins' | 'banned' | 'invitations' | 'settings';
@@ -93,7 +95,7 @@ export function ManageRoomModal({
     setActionError('');
     try {
       const res = await getMembers(roomId);
-      setMembers((res.data.members ?? []) as RoomMember[]);
+      setMembers((res.data.members ?? []).map((m) => normalizeMember(m as Record<string, unknown>)));
     } catch {
       setActionError('Failed to load members.');
     } finally {
@@ -106,7 +108,7 @@ export function ManageRoomModal({
     setActionError('');
     try {
       const res = await getBans(roomId);
-      setBans((res.data.data ?? []) as BannedEntry[]);
+      setBans((res.data.data ?? []).map((b) => normalizeBan(b as Record<string, unknown>)));
     } catch {
       setActionError('Failed to load bans.');
     } finally {
@@ -186,7 +188,7 @@ export function ManageRoomModal({
       await updateRoom(roomId, {
         name: editName.trim(),
         description: editDescription.trim() || undefined,
-        isPrivate: editIsPrivate,
+        visibility: editIsPrivate ? 'private' : 'public',
       });
       onRoomUpdated({ name: editName.trim(), description: editDescription.trim(), isPrivate: editIsPrivate });
       setSaveMsg('Settings saved.');
