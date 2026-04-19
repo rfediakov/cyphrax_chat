@@ -144,9 +144,9 @@ export function MessageInput({
         contextType === 'room'
           ? await sendRoomMessage(contextId, payload)
           : await sendDialogMessage(dialogUserId ?? contextId, payload);
-      // Optimistically append (socket will also emit, but deduplication is not needed
-      // since socket receives it for the room channel and sender has already appended)
-      appendMessage(contextId, response.data);
+      // Optimistically append — socket will also emit but for the room/dialog channel;
+      // the sender's own message is appended here from the REST response.
+      appendMessage(contextId, response.data.message);
     } catch {
       // Restore text if send failed
       setText(content);

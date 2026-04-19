@@ -49,8 +49,8 @@ export function RightSidebar() {
         getRoom(roomId),
         getMembers(roomId),
       ]);
-      setRoomDetails(roomRes.data);
-      setMembers(membersRes.data.data as RoomMember[]);
+      setRoomDetails(roomRes.data.room);
+      setMembers((membersRes.data.members ?? []) as RoomMember[]);
     } catch {
       setRoomDetails(null);
       setMembers([]);
@@ -83,12 +83,13 @@ export function RightSidebar() {
     }
   };
 
-  const currentUserRole = members.find((m) => m.userId._id === currentUser?._id)?.role;
+  const safeMembers = members ?? [];
+  const currentUserRole = safeMembers.find((m) => m.userId._id === currentUser?._id)?.role;
   const isAdminOrOwner = currentUserRole === 'admin' || currentUserRole === 'owner';
 
-  const owners = members.filter((m) => m.role === 'owner');
-  const admins = members.filter((m) => m.role === 'admin');
-  const regularMembers = members.filter((m) => m.role === 'member');
+  const owners = safeMembers.filter((m) => m.role === 'owner');
+  const admins = safeMembers.filter((m) => m.role === 'admin');
+  const regularMembers = safeMembers.filter((m) => m.role === 'member');
 
   if (activeDialogUserId && !activeRoomId) {
     return (

@@ -52,7 +52,7 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
     setError('');
     try {
       const { data } = await createRoom({ name: name.trim(), description: description.trim() || undefined, isPrivate });
-      onCreated(data);
+      onCreated(data.room);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create room';
       setError(msg);
@@ -145,9 +145,9 @@ export function LeftSidebar() {
         getDialogs(),
         getContacts(),
       ]);
-      setRooms(roomsRes.data.data);
-      setDialogs(dialogsRes.data.data);
-      setContacts(contactsRes.data.data);
+      setRooms(roomsRes.data.rooms ?? []);
+      setDialogs(dialogsRes.data.dialogs ?? []);
+      setContacts(contactsRes.data.contacts ?? []);
     } catch {
       // Silently fail — user might not be fully loaded yet
     }
@@ -157,9 +157,11 @@ export function LeftSidebar() {
     loadData();
   }, [loadData]);
 
-  const publicRooms = rooms.filter((r) => !r.isPrivate && r.name.toLowerCase().includes(search.toLowerCase()));
-  const privateRooms = rooms.filter((r) => r.isPrivate && r.name.toLowerCase().includes(search.toLowerCase()));
-  const filteredContacts = contacts.filter((c) => c.username.toLowerCase().includes(search.toLowerCase()));
+  const safeRooms = rooms ?? [];
+  const safeContacts = contacts ?? [];
+  const publicRooms = safeRooms.filter((r) => !r.isPrivate && r.name.toLowerCase().includes(search.toLowerCase()));
+  const privateRooms = safeRooms.filter((r) => r.isPrivate && r.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredContacts = safeContacts.filter((c) => c.username.toLowerCase().includes(search.toLowerCase()));
 
   const getDialogForContact = (contact: Contact): Dialog | undefined =>
     dialogs.find((d) => d.participants.includes(contact._id));
@@ -173,7 +175,7 @@ export function LeftSidebar() {
   };
 
   const handleRoomCreated = (room: Room) => {
-    setRooms([...rooms, room]);
+    setRooms([...(rooms ?? []), room]);
     setShowCreateModal(false);
     setActiveRoom(room._id);
   };

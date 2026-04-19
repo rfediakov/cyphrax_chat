@@ -16,7 +16,7 @@ export interface FriendRequest {
 }
 
 export const getContacts = () =>
-  api.get<{ data: Contact[] }>('/contacts');
+  api.get<{ contacts: Contact[] }>('/contacts');
 
 export const sendFriendRequest = (toUsername: string, message?: string) =>
   api.post('/contacts/request', { toUsername, message });

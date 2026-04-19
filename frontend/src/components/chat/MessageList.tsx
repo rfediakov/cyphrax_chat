@@ -82,7 +82,7 @@ export function MessageList({
           contextType === 'room'
             ? await editRoomMessage(contextId, message._id, { content: newContent })
             : await editDialogMessage(dialogUserId ?? contextId, message._id, { content: newContent });
-        updateMessage(contextId, response.data);
+        updateMessage(contextId, response.data.message);
       } catch {
         // Error handled silently — server will emit message_edited via socket if it succeeds
       }

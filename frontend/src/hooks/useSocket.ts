@@ -22,6 +22,10 @@ interface MessagePayload {
   [key: string]: unknown;
 }
 
+interface WrappedMessagePayload {
+  message: MessagePayload;
+}
+
 interface RoomEventPayload {
   event: string;
   roomId: string;
@@ -104,7 +108,7 @@ export function useSocket() {
       console.warn('[Socket] connection error:', err.message);
     });
 
-    socket.on('message', (msg: MessagePayload) => {
+    socket.on('message', ({ message: msg }: WrappedMessagePayload) => {
       const contextId = msg.roomId ?? msg.dialogId;
       if (!contextId) return;
 
@@ -119,16 +123,16 @@ export function useSocket() {
       }
     });
 
-    socket.on('message_edited', (msg: MessagePayload) => {
+    socket.on('message_edited', ({ message: msg }: WrappedMessagePayload) => {
       const contextId = msg.roomId ?? msg.dialogId;
       if (!contextId) return;
       updateMessage(contextId, msg as unknown as Parameters<typeof updateMessage>[1]);
     });
 
-    socket.on('message_deleted', (payload: { msgId: string; roomId?: string; dialogId?: string }) => {
+    socket.on('message_deleted', (payload: { messageId: string; roomId?: string; dialogId?: string }) => {
       const contextId = payload.roomId ?? payload.dialogId;
       if (!contextId) return;
-      softDeleteMessage(contextId, payload.msgId);
+      softDeleteMessage(contextId, payload.messageId);
     });
 
     socket.on('presence', ({ userId, status }: PresencePayload) => {

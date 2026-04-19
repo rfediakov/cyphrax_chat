@@ -7,10 +7,8 @@ export interface PublicRoomsParams {
 }
 
 export interface PublicRoomsResponse {
-  data: Room[];
+  rooms: Room[];
   total: number;
-  page: number;
-  pages: number;
 }
 
 export interface CreateRoomPayload {
@@ -29,9 +27,9 @@ export const getPublicRooms = (params?: PublicRoomsParams) =>
   api.get<PublicRoomsResponse>('/rooms/public', { params });
 
 export const createRoom = (payload: CreateRoomPayload) =>
-  api.post<Room>('/rooms', payload);
+  api.post<{ room: Room }>('/rooms', payload);
 
-export const getRoom = (id: string) => api.get<Room>(`/rooms/${id}`);
+export const getRoom = (id: string) => api.get<{ room: Room }>(`/rooms/${id}`);
 
 export const updateRoom = (id: string, payload: UpdateRoomPayload) =>
   api.put<Room>(`/rooms/${id}`, payload);
@@ -43,7 +41,7 @@ export const joinRoom = (id: string) => api.post(`/rooms/${id}/join`);
 export const leaveRoom = (id: string) => api.delete(`/rooms/${id}/leave`);
 
 export const getMembers = (id: string) =>
-  api.get<{ data: unknown[] }>(`/rooms/${id}/members`);
+  api.get<{ members: unknown[] }>(`/rooms/${id}/members`);
 
 export const promoteAdmin = (roomId: string, userId: string) =>
   api.post(`/rooms/${roomId}/admins/${userId}`);
