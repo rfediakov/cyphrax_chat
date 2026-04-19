@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import Chat from './pages/Chat';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -21,11 +22,11 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Placeholder for authenticated pages — implemented in Phase 7 & 8
-function ChatPlaceholder() {
+// Placeholder for Phase 8 pages (Sessions, Profile)
+function ComingSoon({ label }: { label: string }) {
   return (
     <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
-      <p className="text-xl">Chat — coming in Phase 7</p>
+      <p className="text-xl text-gray-400">{label} — coming in Phase 8</p>
     </div>
   );
 }
@@ -56,7 +57,7 @@ export default function App() {
           path="/"
           element={
             <RequireAuth>
-              <ChatPlaceholder />
+              <Chat />
             </RequireAuth>
           }
         />
@@ -64,7 +65,7 @@ export default function App() {
           path="/sessions"
           element={
             <RequireAuth>
-              <ChatPlaceholder />
+              <ComingSoon label="Sessions" />
             </RequireAuth>
           }
         />
@@ -72,7 +73,7 @@ export default function App() {
           path="/profile"
           element={
             <RequireAuth>
-              <ChatPlaceholder />
+              <ComingSoon label="Profile" />
             </RequireAuth>
           }
         />

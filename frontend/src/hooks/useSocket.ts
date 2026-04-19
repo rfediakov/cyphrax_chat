@@ -28,8 +28,25 @@ interface RoomEventPayload {
   [key: string]: unknown;
 }
 
-// Ephemeral typing state, not in Zustand since it's transient
+// Ephemeral typing state keyed by contextId — not in Zustand since it's transient
 export const typingUsers: Record<string, { userId: string; username: string; timeout: ReturnType<typeof setTimeout> }[]> = {};
+
+function addTypingUser(contextId: string, userId: string, username: string) {
+  if (!typingUsers[contextId]) typingUsers[contextId] = [];
+  const existing = typingUsers[contextId].find((u) => u.userId === userId);
+  if (existing) {
+    clearTimeout(existing.timeout);
+    existing.timeout = setTimeout(() => removeTypingUser(contextId, userId), 3000);
+    return;
+  }
+  const timeout = setTimeout(() => removeTypingUser(contextId, userId), 3000);
+  typingUsers[contextId].push({ userId, username, timeout });
+}
+
+function removeTypingUser(contextId: string, userId: string) {
+  if (!typingUsers[contextId]) return;
+  typingUsers[contextId] = typingUsers[contextId].filter((u) => u.userId !== userId);
+}
 
 let socketSingleton: Socket | null = null;
 
@@ -127,8 +144,8 @@ export function useSocket() {
       // TODO(agent-8): show toast notification
     });
 
-    socket.on('typing', (_payload: TypingPayload) => {
-      // TODO(agent-7): manage ephemeral typing indicators in component state
+    socket.on('typing', ({ userId, username, contextId }: TypingPayload) => {
+      addTypingUser(contextId, userId, username);
     });
 
     return () => {
