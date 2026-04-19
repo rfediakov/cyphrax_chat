@@ -30,7 +30,6 @@ export function MessageInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activityThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
 
   const appendMessage = useChatStore((s) => s.appendMessage);
@@ -70,19 +69,9 @@ export function MessageInput({
     }, 1000);
   }, [socket, contextId, contextType]);
 
-  const emitActivity = useCallback(() => {
-    if (!socket) return;
-    if (activityThrottleRef.current) return;
-    socket.emit('activity');
-    activityThrottleRef.current = setTimeout(() => {
-      activityThrottleRef.current = null;
-    }, 10000);
-  }, [socket]);
-
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
     emitTyping();
-    emitActivity();
   };
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
@@ -157,7 +146,6 @@ export function MessageInput({
       e.preventDefault();
       sendMessage();
     }
-    emitActivity();
   };
 
   return (

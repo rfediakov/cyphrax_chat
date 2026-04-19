@@ -100,6 +100,19 @@ export function useSocket() {
     socketSingleton = socket;
     socketRef.current = socket;
 
+    const activityThrottle = { current: false };
+
+    const emitActivity = () => {
+      if (!socketSingleton?.connected || activityThrottle.current) return;
+      socketSingleton.emit('activity');
+      activityThrottle.current = true;
+      setTimeout(() => { activityThrottle.current = false; }, 10_000);
+    };
+
+    window.addEventListener('mousemove', emitActivity, { passive: true });
+    window.addEventListener('keydown', emitActivity, { passive: true });
+    window.addEventListener('pointerdown', emitActivity, { passive: true });
+
     socket.on('connect', () => {
       console.log('[Socket] connected', socket.id);
       setConnected(true);
@@ -212,8 +225,9 @@ export function useSocket() {
     });
 
     return () => {
-      // Only disconnect if token changes (i.e., this cleanup is for re-connect)
-      // Do not disconnect on every render
+      window.removeEventListener('mousemove', emitActivity);
+      window.removeEventListener('keydown', emitActivity);
+      window.removeEventListener('pointerdown', emitActivity);
     };
   }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 

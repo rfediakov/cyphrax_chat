@@ -75,16 +75,6 @@ export default function Chat() {
     }
   }, [activeContext?.contextId, socket]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Activity tracking on mouse move (throttled inside useSocket)
-  useEffect(() => {
-    const handler = () => {
-      if (socket) socket.emit('activity');
-    };
-    // Very coarse: only attach once, throttle within socket hook
-    window.addEventListener('mousemove', handler, { passive: true });
-    return () => window.removeEventListener('mousemove', handler);
-  }, [socket]);
-
   const handleReply = useCallback((message: Message) => {
     setReplyTo(message);
   }, []);
