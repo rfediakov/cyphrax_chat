@@ -5,6 +5,9 @@ import { config } from './config.js';
 import { connectMongo } from './lib/mongo.js';
 import { redis } from './lib/redis.js';
 import { AppError } from './lib/errors.js';
+import authRoutes from './routes/auth.routes.js';
+import sessionsRoutes from './routes/sessions.routes.js';
+import usersRoutes from './routes/users.routes.js';
 
 const app = express();
 
@@ -15,6 +18,11 @@ app.use(cookieParser());
 app.get('/', (_req, res) => {
   res.json({ status: 'ok', message: 'Chat API running' });
 });
+
+// API v1 routes
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/sessions', sessionsRoutes);
+app.use('/api/v1/users', usersRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

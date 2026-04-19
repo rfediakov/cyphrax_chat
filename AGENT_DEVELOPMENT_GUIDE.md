@@ -820,15 +820,15 @@ Track overall progress here. Each agent should mark items complete as they finis
 - [x] Global Express error handler returns structured JSON — registered in src/index.ts; returns { error: message }
 
 ### Backend — Auth
-- [ ] Registration with unique email + username
-- [ ] Login → access token + refresh cookie
-- [ ] Persistent login via refresh token rotation
-- [ ] Logout (current session only)
-- [ ] Password reset flow (JWT-based, console-logged reset link)
-- [ ] Password change (authenticated)
-- [ ] Session list (no token hash exposed)
-- [ ] Per-session revocation
-- [ ] Account deletion with full cascade
+- [x] Registration with unique email + username — `src/services/auth.service.ts` register(), ConflictError on duplicate email/username
+- [x] Login → access token + refresh cookie — login() issues JWT access token + HttpOnly SameSite=Strict refresh cookie
+- [x] Persistent login via refresh token rotation — refreshTokens() revokes old session, issues new one
+- [x] Logout (current session only) — logout() sets revokedAt on current session only
+- [x] Password reset flow (JWT-based, console-logged reset link) — requestPasswordReset() logs URL to console; resetPassword() verifies JWT
+- [x] Password change (authenticated) — changePassword() verifies current password first
+- [x] Session list (no token hash exposed) — GET /sessions selects -tokenHash; includes isCurrent flag
+- [x] Per-session revocation — DELETE /sessions/:id; cannot revoke current session (use /logout)
+- [x] Account deletion with full cascade — deleteAccount() deletes owned rooms+messages+attachments, removes memberships, soft-deletes user
 
 ### Backend — Core API
 - [ ] Friend requests (send, accept, reject, remove)
