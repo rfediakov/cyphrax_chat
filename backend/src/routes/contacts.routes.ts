@@ -7,6 +7,7 @@ import { getIo } from '../lib/io.js';
 import { User } from '../models/user.model.js';
 import { FriendRequest } from '../models/friendRequest.model.js';
 import { Dialog } from '../models/dialog.model.js';
+import { getPresenceStatuses } from '../presence/presence.manager.js';
 
 const router = Router();
 
@@ -96,6 +97,20 @@ router.put(
           // Join both users' live sockets into the new dialog room
           await io.in(`user:${fromUserId}`).socketsJoin(`dialog:${dialogId}`);
           await io.in(`user:${toUserId}`).socketsJoin(`dialog:${dialogId}`);
+
+          // Immediately push current presence of both users to each other.
+          // evaluateAndBroadcastPresence only fires when status *changes*, so if
+          // both users are already online their presence would never be delivered
+          // to the newly created dialog room without this explicit push.
+          const statuses = await getPresenceStatuses([fromUserId, toUserId]);
+          io.to(`user:${toUserId}`).emit('presence', {
+            userId: fromUserId,
+            status: statuses[fromUserId] ?? 'offline',
+          });
+          io.to(`user:${fromUserId}`).emit('presence', {
+            userId: toUserId,
+            status: statuses[toUserId] ?? 'offline',
+          });
 
           // Notify User-A that their request was accepted and a dialog is ready
           io.to(`user:${fromUserId}`).emit('friend_request_accepted', {
