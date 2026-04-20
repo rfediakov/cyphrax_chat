@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
 import { useToast } from '../components/ui/Toast';
+import { fetchPresenceStatuses } from '../api/presence.api';
 
 interface TypingPayload {
   userId: string;
@@ -74,6 +75,7 @@ export function useSocket() {
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
   const setStatus = usePresenceStore((s) => s.setStatus);
+  const bulkSetStatuses = usePresenceStore((s) => s.bulkSetStatuses);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -105,6 +107,29 @@ export function useSocket() {
     socket.on('connect', () => {
       console.log('[Socket] connected', socket.id);
       setConnected(true);
+
+      // Hydrate presence store for all known peers
+      void (async () => {
+        try {
+          const { dialogs } = useChatStore.getState();
+          const peerIds = new Set<string>();
+
+          for (const d of dialogs ?? []) {
+            const otherId = d.otherUser?._id ?? d.otherUser?.id;
+            if (otherId) peerIds.add(otherId);
+            for (const p of d.participants ?? []) {
+              if (typeof p === 'string') peerIds.add(p);
+            }
+          }
+
+          if (peerIds.size === 0) return;
+
+          const statuses = await fetchPresenceStatuses([...peerIds]);
+          bulkSetStatuses(statuses);
+        } catch (err) {
+          console.warn('[Presence] Initial sync failed:', err);
+        }
+      })();
     });
 
     socket.on('disconnect', () => {

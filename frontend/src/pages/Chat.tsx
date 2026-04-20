@@ -75,14 +75,37 @@ export default function Chat() {
     }
   }, [activeContext?.contextId, socket]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Activity tracking on mouse move (throttled inside useSocket)
+  // Activity tracking: mouse, keyboard, and page visibility — throttled to 10s
   useEffect(() => {
-    const handler = () => {
-      if (socket) socket.emit('activity');
+    if (!socket) return;
+
+    const THROTTLE_MS = 10_000;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const emitActivity = () => {
+      if (timer) return;
+      socket.emit('activity');
+      timer = setTimeout(() => {
+        timer = null;
+      }, THROTTLE_MS);
     };
-    // Very coarse: only attach once, throttle within socket hook
-    window.addEventListener('mousemove', handler, { passive: true });
-    return () => window.removeEventListener('mousemove', handler);
+
+    const handleVisibility = () => {
+      if (!document.hidden) emitActivity();
+    };
+
+    window.addEventListener('mousemove', emitActivity, { passive: true });
+    window.addEventListener('keydown', emitActivity, { passive: true });
+    window.addEventListener('focus', emitActivity);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('mousemove', emitActivity);
+      window.removeEventListener('keydown', emitActivity);
+      window.removeEventListener('focus', emitActivity);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (timer) clearTimeout(timer);
+    };
   }, [socket]);
 
   const handleReply = useCallback((message: Message) => {
@@ -149,6 +172,7 @@ export default function Chat() {
                 dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
                 replyTo={replyTo}
                 onClearReply={handleClearReply}
+                socket={socket}
               />
             </>
           ) : (
