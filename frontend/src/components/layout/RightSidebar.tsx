@@ -3,8 +3,11 @@ import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
 import { getRoom, getMembers, normalizeMember, sendInvitation } from '../../api/rooms.api';
+import { getContacts, normalizeContact } from '../../api/contacts.api';
+import { findDialogWithUser } from '../../lib/dialogs';
 import { ManageRoomModal } from '../modals/ManageRoomModal';
 import type { Room } from '../../store/chat.store';
+import type { Contact } from '../../api/contacts.api';
 
 interface RoomMember {
   _id: string;
@@ -100,11 +103,7 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
   const regularMembers = safeMembers.filter((m) => m.role === 'member');
 
   if (activeDialogUserId && !activeRoomId) {
-    return (
-      <aside className="w-56 bg-gray-900 border-l border-gray-700 hidden lg:flex flex-col shrink-0 p-4">
-        <p className="text-xs text-gray-500 text-center">Direct message</p>
-      </aside>
-    );
+    return <DMUserPanel userId={activeDialogUserId} />;
   }
 
   if (!activeRoomId) {
@@ -261,6 +260,159 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
         />
       )}
     </>
+  );
+}
+
+/** Derive a deterministic hue from a string for the avatar background. */
+function avatarHue(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) % 360;
+}
+
+function UserAvatar({ username, size = 'lg' }: { username: string; size?: 'sm' | 'lg' }) {
+  const hue = avatarHue(username);
+  const initials = username.slice(0, 2).toUpperCase();
+  const dim = size === 'lg' ? 'w-16 h-16 text-xl' : 'w-8 h-8 text-xs';
+  return (
+    <div
+      className={`${dim} rounded-full flex items-center justify-center font-bold text-white select-none shrink-0`}
+      style={{ backgroundColor: `hsl(${hue} 55% 38%)` }}
+    >
+      {initials}
+    </div>
+  );
+}
+
+const STATUS_LABEL: Record<PresenceStatus, string> = {
+  online: 'Online',
+  afk: 'Away',
+  offline: 'Offline',
+};
+
+const STATUS_COLOR: Record<PresenceStatus, string> = {
+  online: 'text-green-400',
+  afk: 'text-amber-400',
+  offline: 'text-gray-500',
+};
+
+function formatRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function DMUserPanel({ userId }: { userId: string }) {
+  const { getStatus } = usePresence();
+  const dialogs = useChatStore((s) => s.dialogs);
+  const [contact, setContact] = useState<Contact | null>(null);
+
+  const dialog = findDialogWithUser(dialogs, userId);
+  const username = dialog?.otherUser?.username ?? userId;
+  const status = getStatus(userId);
+
+  useEffect(() => {
+    let cancelled = false;
+    getContacts().then((res) => {
+      if (cancelled) return;
+      const found = (res.data.contacts ?? [])
+        .map(normalizeContact)
+        .find((c) => c && (c._id === userId));
+      setContact(found ?? null);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  return (
+    <aside className="w-56 bg-gray-900 border-l border-gray-700 hidden lg:flex flex-col shrink-0 overflow-hidden">
+      {/* Header band */}
+      <div className="px-4 py-3 border-b border-gray-700 shrink-0">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Direct Message</p>
+      </div>
+
+      {/* Profile section */}
+      <div className="flex flex-col items-center gap-3 px-4 py-6 border-b border-gray-700 shrink-0">
+        {/* Avatar + presence ring */}
+        <div className="relative">
+          <UserAvatar username={username} size="lg" />
+          <span
+            className={`absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full border-2 border-gray-900 ${
+              status === 'online' ? 'bg-green-400' : status === 'afk' ? 'bg-amber-400' : 'bg-gray-500'
+            }`}
+          />
+        </div>
+
+        {/* Name + status */}
+        <div className="flex flex-col items-center gap-1 w-full min-w-0">
+          <span className="text-sm font-bold text-white truncate max-w-full">@{username}</span>
+          <span className={`text-xs font-medium ${STATUS_COLOR[status]}`}>
+            ● {STATUS_LABEL[status]}
+          </span>
+        </div>
+      </div>
+
+      {/* Info rows */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {/* Contact details */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Contact info</p>
+          <div className="space-y-2">
+            {/* Username row */}
+            <div className="flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="text-xs text-gray-300 truncate">{username}</span>
+            </div>
+
+            {/* Email row — shown only when available */}
+            {contact?.email && (
+              <div className="flex items-center gap-2">
+                <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span className="text-xs text-gray-300 truncate">{contact.email}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Conversation details */}
+        {dialog && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Conversation</p>
+            <div className="space-y-2">
+              {/* Last active */}
+              <div className="flex items-center gap-2">
+                <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-xs text-gray-400">
+                  Active {formatRelativeTime(dialog.updatedAt)}
+                </span>
+              </div>
+
+              {/* Last message preview */}
+              {dialog.lastMessage && !dialog.lastMessage.deletedAt && (
+                <div className="mt-1 p-2 bg-gray-800 rounded-lg border border-gray-700">
+                  <p className="text-xs text-gray-500 mb-0.5">Last message</p>
+                  <p className="text-xs text-gray-300 line-clamp-2 leading-relaxed">
+                    {dialog.lastMessage.content}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }
 
