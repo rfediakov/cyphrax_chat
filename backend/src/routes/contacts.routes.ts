@@ -24,12 +24,13 @@ router.post('/request', requireAuth, async (req: Request, res: Response, next: N
     if (!toUsername) {
       throw new BadRequestError('toUsername is required');
     }
-    const { toUserId } = await contactService.sendFriendRequest(req.user!._id, toUsername, message);
+    const { toUserId, requestId } = await contactService.sendFriendRequest(req.user!._id, toUsername, message);
     res.status(201).json({ message: 'Friend request sent' });
 
-    const from = await User.findById(req.user!._id).select('username').lean();
+    const from = await User.findById(req.user!._id).select('username email').lean();
     getIo()?.to(`user:${toUserId}`).emit('friend_request', {
-      fromUser: { _id: req.user!._id, username: from?.username ?? 'Someone' },
+      requestId,
+      fromUser: { _id: req.user!._id, username: from?.username ?? 'Someone', email: from?.email ?? '' },
     });
   } catch (err) {
     next(err);

@@ -121,6 +121,7 @@ export interface PendingInvitation {
   invitationId: string;
   roomId: string;
   roomName: string;
+  isPrivate: boolean;
 }
 
 export const getPendingInvitations = () =>

@@ -33,6 +33,7 @@ interface RoomEventPayload {
   invitationId?: string;
   invId?: string;
   roomName?: string;
+  isPrivate?: boolean;
   [key: string]: unknown;
 }
 
@@ -68,6 +69,7 @@ export function useSocket() {
   const softDeleteMessage = useChatStore((s) => s.softDeleteMessage);
   const incrementUnread = useChatStore((s) => s.incrementUnread);
   const addPendingInvitation = useChatStore((s) => s.addPendingInvitation);
+  const addPendingFriendRequest = useChatStore((s) => s.addPendingFriendRequest);
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
@@ -156,26 +158,34 @@ export function useSocket() {
             invitationId,
             roomId: payload.roomId,
             roomName: payload.roomName ?? payload.roomId,
+            isPrivate: payload.isPrivate ?? true,
           });
         }
 
-        // Also show a brief toast nudge pointing the user to the sidebar
-        showToast(
-          `You have been invited to #${roomName} — see Invitations in the sidebar`,
-          'info',
-        );
+        // Brief nudge toast — the card in the sidebar is the actionable element
+        showToast(`You have been invited to #${roomName}`, 'info');
       }
     });
 
     socket.on(
       'friend_request',
-      (payload: { fromUser?: { _id: string; username: string }; fromUserId?: string }) => {
-        const username = payload.fromUser?.username;
-        if (username) {
-          showToast(`@${username} sent you a friend request.`, 'info');
-          return;
+      (payload: { fromUser?: { _id: string; username: string; email?: string }; fromUserId?: string; requestId?: string; id?: string }) => {
+        const user = payload.fromUser;
+        if (user) {
+          // Add to sidebar Contacts section so user can act on it immediately
+          addPendingFriendRequest({
+            id: payload.requestId ?? payload.id ?? `${user._id}-${Date.now()}`,
+            fromUser: {
+              id: user._id,
+              username: user.username,
+              email: user.email ?? '',
+            },
+            createdAt: new Date().toISOString(),
+          });
+          showToast(`@${user.username} sent you a friend request`, 'info');
+        } else {
+          showToast('You have a new friend request', 'info');
         }
-        showToast('You have a new friend request.', 'info');
       },
     );
 

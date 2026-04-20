@@ -360,18 +360,23 @@ export async function getBans(roomId: string, callerId: string) {
 
 // GET /api/v1/rooms/invitations/pending  — all pending invitations for current user
 export async function getPendingInvitations(userId: string) {
+  type PopulatedRoom = { _id: Types.ObjectId; name: string; visibility: string };
   const invitations = await RoomInvitation.find({
     invitedUser: new Types.ObjectId(userId),
     status: 'pending',
   })
-    .populate<{ roomId: { _id: Types.ObjectId; name: string } }>('roomId', '_id name')
+    .populate<{ roomId: PopulatedRoom }>('roomId', '_id name visibility')
     .lean();
 
-  return invitations.map((inv) => ({
-    invitationId: String(inv._id),
-    roomId: String((inv.roomId as unknown as { _id: Types.ObjectId; name: string })._id),
-    roomName: (inv.roomId as unknown as { _id: Types.ObjectId; name: string }).name,
-  }));
+  return invitations.map((inv) => {
+    const room = inv.roomId as unknown as PopulatedRoom;
+    return {
+      invitationId: String(inv._id),
+      roomId: String(room._id),
+      roomName: room.name,
+      isPrivate: room.visibility === 'private',
+    };
+  });
 }
 
 // POST /api/v1/rooms/:id/invitations  — invite user to private room (admin/owner)
@@ -379,7 +384,7 @@ export async function sendInvitation(
   roomId: string,
   callerId: string,
   username: string,
-): Promise<{ invitedUserId: string; invitationId: string; roomName: string }> {
+): Promise<{ invitedUserId: string; invitationId: string; roomName: string; isPrivate: boolean }> {
   const roomObjectId = new Types.ObjectId(roomId);
 
   const { room } = await requireAdminOrOwner(roomObjectId, callerId);
@@ -421,6 +426,7 @@ export async function sendInvitation(
     invitedUserId: targetObjectId.toString(),
     invitationId: invitation._id.toString(),
     roomName: room.name,
+    isPrivate: room.visibility === 'private',
   };
 }
 

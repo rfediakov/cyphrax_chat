@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { PendingInvitation } from '../api/rooms.api';
+import type { PendingFriendRequest } from '../api/contacts.api';
 
 export interface Message {
   _id: string;
@@ -59,6 +60,7 @@ interface ChatState {
   messages: Record<string, Message[]>;
   unreadCounts: Record<string, number>;
   pendingInvitations: PendingInvitation[];
+  pendingFriendRequests: PendingFriendRequest[];
 
   setActiveRoom: (id: string | null) => void;
   setActiveDialog: (userId: string | null) => void;
@@ -67,6 +69,9 @@ interface ChatState {
   setPendingInvitations: (invitations: PendingInvitation[]) => void;
   addPendingInvitation: (inv: PendingInvitation) => void;
   removePendingInvitation: (invitationId: string) => void;
+  setPendingFriendRequests: (requests: PendingFriendRequest[]) => void;
+  addPendingFriendRequest: (req: PendingFriendRequest) => void;
+  removePendingFriendRequest: (requestId: string) => void;
   appendMessage: (contextId: string, msg: Message) => void;
   prependMessages: (contextId: string, msgs: Message[]) => void;
   updateMessage: (contextId: string, msg: Message) => void;
@@ -83,6 +88,7 @@ export const useChatStore = create<ChatState>((set) => ({
   messages: {},
   unreadCounts: {},
   pendingInvitations: [],
+  pendingFriendRequests: [],
 
   setActiveRoom: (id) =>
     set({ activeRoomId: id, activeDialogUserId: null }),
@@ -107,6 +113,19 @@ export const useChatStore = create<ChatState>((set) => ({
   removePendingInvitation: (invitationId) =>
     set((state) => ({
       pendingInvitations: state.pendingInvitations.filter((i) => i.invitationId !== invitationId),
+    })),
+
+  setPendingFriendRequests: (requests) => set({ pendingFriendRequests: requests }),
+
+  addPendingFriendRequest: (req) =>
+    set((state) => {
+      if (state.pendingFriendRequests.some((r) => r.id === req.id)) return state;
+      return { pendingFriendRequests: [...state.pendingFriendRequests, req] };
+    }),
+
+  removePendingFriendRequest: (requestId) =>
+    set((state) => ({
+      pendingFriendRequests: state.pendingFriendRequests.filter((r) => r.id !== requestId),
     })),
 
   appendMessage: (contextId, msg) =>
