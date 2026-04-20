@@ -26,7 +26,12 @@ function PresenceDot({ status }: { status: PresenceStatus }) {
   return <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${colors[status]}`} />;
 }
 
-export function RightSidebar() {
+interface RightSidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
   const rooms = useChatStore((s) => s.rooms);
@@ -110,10 +115,10 @@ export function RightSidebar() {
     );
   }
 
-  return (
-    <aside className="w-56 bg-gray-900 border-l border-gray-700 hidden lg:flex flex-col shrink-0 overflow-hidden">
+  const panelBody = (
+    <>
       {/* Room info */}
-      <div className="p-4 border-b border-gray-700">
+      <div className="p-4 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-gray-400 text-sm">#</span>
           <h2 className="text-sm font-bold text-white truncate">{activeRoom?.name ?? roomDetails?.name}</h2>
@@ -152,7 +157,7 @@ export function RightSidebar() {
 
       {/* Action buttons */}
       {isAdminOrOwner && (
-        <div className="p-3 border-t border-gray-700 space-y-2">
+        <div className="p-3 border-t border-gray-700 space-y-2 shrink-0">
           <button
             onClick={() => setShowInvite((v) => !v)}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg transition-colors border border-gray-700"
@@ -199,6 +204,45 @@ export function RightSidebar() {
           </button>
         </div>
       )}
+    </>
+  );
+
+  return (
+    <>
+      {/* Backdrop — mobile only */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          aria-hidden="true"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Mobile drawer + desktop sidebar share the same element.
+          On mobile: fixed right-side sheet when open, hidden when closed.
+          On desktop (lg+): always visible static column. */}
+      <aside
+        className={`bg-gray-900 border-l border-gray-700 flex-col shrink-0 overflow-hidden
+          ${isOpen ? 'fixed inset-y-0 right-0 z-40 w-72 flex' : 'hidden'}
+          lg:static lg:flex lg:w-56 lg:z-auto`}
+      >
+        {/* Mobile-only header with close button */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0 lg:hidden">
+          <span className="text-sm font-semibold text-white">Members</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+            aria-label="Close panel"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {panelBody}
+      </aside>
 
       {showManageModal && activeRoomId && roomDetails && (
         <ManageRoomModal
@@ -216,7 +260,7 @@ export function RightSidebar() {
           }}
         />
       )}
-    </aside>
+    </>
   );
 }
 
