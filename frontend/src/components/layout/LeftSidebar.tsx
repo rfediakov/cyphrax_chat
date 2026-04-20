@@ -2,11 +2,23 @@ import { useState, useEffect, useCallback } from 'react';
 import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
-import { getContacts, normalizeContact } from '../../api/contacts.api';
-import { getMyRooms, createRoom, normalizeRoom } from '../../api/rooms.api';
+import {
+  getContacts,
+  normalizeContact,
+  getPendingRequests,
+  respondToRequest,
+} from '../../api/contacts.api';
+import {
+  getMyRooms,
+  createRoom,
+  normalizeRoom,
+  getPendingInvitations,
+  respondToInvitation,
+} from '../../api/rooms.api';
 import { getDialogs } from '../../api/messages.api';
-import type { Contact } from '../../api/contacts.api';
+import type { Contact, PendingFriendRequest } from '../../api/contacts.api';
 import type { Room, Dialog } from '../../store/chat.store';
+import type { PendingInvitation } from '../../api/rooms.api';
 import { findDialogWithUser, getDialogRecordId } from '../../lib/dialogs';
 
 type PresenceStatus = 'online' | 'afk' | 'offline';
@@ -31,6 +43,46 @@ function UnreadBadge({ count }: { count: number }) {
     <span className="ml-auto shrink-0 bg-amber-500 text-black text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
       {count > 99 ? '99+' : count}
     </span>
+  );
+}
+
+/** Compact card shown inline under each section for pending invitations/requests. */
+function InviteCard({
+  label,
+  busy,
+  onAccept,
+  onDecline,
+}: {
+  label: string;
+  busy: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1 px-3 py-2 mx-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <svg className="w-3 h-3 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+        <span className="text-xs text-amber-300 truncate">{label}</span>
+      </div>
+      <div className="flex gap-1">
+        <button
+          onClick={onAccept}
+          disabled={busy}
+          className="flex-1 text-xs py-0.5 px-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors font-medium"
+        >
+          {busy ? '…' : 'Accept'}
+        </button>
+        <button
+          onClick={onDecline}
+          disabled={busy}
+          className="flex-1 text-xs py-0.5 px-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 transition-colors"
+        >
+          {busy ? '…' : 'Decline'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -128,12 +180,16 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
 }
 
 interface LeftSidebarProps {
-  /** Hide on small screens while a chat is open so the message composer can use full width. */
   mobileHidden?: boolean;
 }
 
 export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
-  const { activeRoomId, activeDialogUserId, rooms, dialogs, unreadCounts, setRooms, setDialogs, setActiveRoom, setActiveDialog } = useChatStore();
+  const {
+    activeRoomId, activeDialogUserId, rooms, dialogs, unreadCounts,
+    setRooms, setDialogs, setActiveRoom, setActiveDialog,
+    pendingInvitations, setPendingInvitations, removePendingInvitation,
+    pendingFriendRequests, setPendingFriendRequests, removePendingFriendRequest,
+  } = useChatStore();
   const currentUser = useAuthStore((s) => s.user);
   const { getStatus } = usePresence();
 
@@ -143,29 +199,81 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
   const [privateExpanded, setPrivateExpanded] = useState(true);
   const [contactsExpanded, setContactsExpanded] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [respondingRoomInv, setRespondingRoomInv] = useState<string | null>(null);
+  const [respondingFriendReq, setRespondingFriendReq] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [roomsRes, dialogsRes, contactsRes] = await Promise.all([
+      const [roomsRes, dialogsRes, contactsRes, invRes, friendReqRes] = await Promise.all([
         getMyRooms(),
         getDialogs(),
         getContacts(),
+        getPendingInvitations(),
+        getPendingRequests(),
       ]);
       setRooms((roomsRes.data.rooms ?? []).map((r) => normalizeRoom(r as unknown as Record<string, unknown>)));
       setDialogs(dialogsRes.data.dialogs ?? []);
       setContacts(
         (contactsRes.data.contacts ?? [])
           .map(normalizeContact)
-          .filter((c): c is Contact => c !== null)
+          .filter((c): c is Contact => c !== null),
       );
+      setPendingInvitations(invRes.data.invitations ?? []);
+      setPendingFriendRequests(friendReqRes.data.requests ?? []);
     } catch {
       // Silently fail — user might not be fully loaded yet
     }
-  }, [setRooms, setDialogs]);
+  }, [setRooms, setDialogs, setPendingInvitations, setPendingFriendRequests]);
+
+  const handleRoomInviteRespond = useCallback(async (
+    inv: PendingInvitation,
+    action: 'accept' | 'reject',
+  ) => {
+    setRespondingRoomInv(inv.invitationId);
+    try {
+      await respondToInvitation(inv.roomId, inv.invitationId, action);
+      removePendingInvitation(inv.invitationId);
+      if (action === 'accept') {
+        const roomsRes = await getMyRooms();
+        setRooms((roomsRes.data.rooms ?? []).map((r) => normalizeRoom(r as unknown as Record<string, unknown>)));
+      }
+    } catch {
+      // Keep visible so user can retry
+    } finally {
+      setRespondingRoomInv(null);
+    }
+  }, [removePendingInvitation, setRooms]);
+
+  const handleFriendReqRespond = useCallback(async (
+    req: PendingFriendRequest,
+    action: 'accept' | 'reject',
+  ) => {
+    setRespondingFriendReq(req.id);
+    try {
+      await respondToRequest(req.id, action);
+      removePendingFriendRequest(req.id);
+      if (action === 'accept') {
+        // Reload contacts and dialogs so the new friend and dialog channel appear
+        const [contactsRes, dialogsRes] = await Promise.all([getContacts(), getDialogs()]);
+        setContacts(
+          (contactsRes.data.contacts ?? [])
+            .map(normalizeContact)
+            .filter((c): c is Contact => c !== null),
+        );
+        setDialogs(dialogsRes.data.dialogs ?? []);
+      }
+    } catch {
+      // Keep visible so user can retry
+    } finally {
+      setRespondingFriendReq(null);
+    }
+  }, [removePendingFriendRequest]);
+
+  const contactsRefreshToken = useChatStore((s) => s.contactsRefreshToken);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, contactsRefreshToken]);
 
   const safeRooms = rooms ?? [];
   const safeContacts = contacts ?? [];
@@ -173,16 +281,14 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
   const privateRooms = safeRooms.filter((r) => r.isPrivate && r.name.toLowerCase().includes(search.toLowerCase()));
   const filteredContacts = safeContacts.filter((c) => c.username.toLowerCase().includes(search.toLowerCase()));
 
+  const publicRoomInvites = pendingInvitations.filter((i) => !i.isPrivate);
+  const privateRoomInvites = pendingInvitations.filter((i) => i.isPrivate);
+
   const getDialogForContact = (contact: Contact): Dialog | undefined =>
     findDialogWithUser(dialogs, contact._id);
 
-  const handleRoomClick = (room: Room) => {
-    setActiveRoom(room._id);
-  };
-
-  const handleContactClick = (contact: Contact) => {
-    setActiveDialog(contact._id);
-  };
+  const handleRoomClick = (room: Room) => setActiveRoom(room._id);
+  const handleContactClick = (contact: Contact) => setActiveDialog(contact._id);
 
   const handleRoomCreated = (room: Room) => {
     const normalized = normalizeRoom(room as unknown as Record<string, unknown>);
@@ -215,9 +321,11 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
-        {/* ROOMS section */}
+
+        {/* PUBLIC ROOMS */}
         <Section
           title="Public Rooms"
+          badge={publicRoomInvites.length}
           expanded={publicExpanded}
           onToggle={() => setPublicExpanded((v) => !v)}
         >
@@ -233,10 +341,21 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
           {publicRooms.length === 0 && (
             <p className="px-3 py-1 text-xs text-gray-600">No rooms</p>
           )}
+          {publicRoomInvites.map((inv) => (
+            <InviteCard
+              key={inv.invitationId}
+              label={`Invited to #${inv.roomName}`}
+              busy={respondingRoomInv === inv.invitationId}
+              onAccept={() => handleRoomInviteRespond(inv, 'accept')}
+              onDecline={() => handleRoomInviteRespond(inv, 'reject')}
+            />
+          ))}
         </Section>
 
+        {/* PRIVATE ROOMS */}
         <Section
           title="Private Rooms"
+          badge={privateRoomInvites.length}
           expanded={privateExpanded}
           onToggle={() => setPrivateExpanded((v) => !v)}
         >
@@ -249,14 +368,24 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
               onClick={() => handleRoomClick(room)}
             />
           ))}
-          {privateRooms.length === 0 && (
+          {privateRooms.length === 0 && privateRoomInvites.length === 0 && (
             <p className="px-3 py-1 text-xs text-gray-600">No private rooms</p>
           )}
+          {privateRoomInvites.map((inv) => (
+            <InviteCard
+              key={inv.invitationId}
+              label={`Invited to #${inv.roomName}`}
+              busy={respondingRoomInv === inv.invitationId}
+              onAccept={() => handleRoomInviteRespond(inv, 'accept')}
+              onDecline={() => handleRoomInviteRespond(inv, 'reject')}
+            />
+          ))}
         </Section>
 
-        {/* CONTACTS section */}
+        {/* CONTACTS */}
         <Section
           title="Contacts"
+          badge={pendingFriendRequests.length}
           expanded={contactsExpanded}
           onToggle={() => setContactsExpanded((v) => !v)}
         >
@@ -280,9 +409,18 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
               </button>
             );
           })}
-          {filteredContacts.length === 0 && (
+          {filteredContacts.length === 0 && pendingFriendRequests.length === 0 && (
             <p className="px-3 py-1 text-xs text-gray-600">No contacts</p>
           )}
+          {pendingFriendRequests.map((req) => (
+            <InviteCard
+              key={req.id}
+              label={`@${req.fromUser.username} wants to connect`}
+              busy={respondingFriendReq === req.id}
+              onAccept={() => handleFriendReqRespond(req, 'accept')}
+              onDecline={() => handleFriendReqRespond(req, 'reject')}
+            />
+          ))}
           {currentUser && (
             <p className="px-3 py-1 text-xs text-gray-600">You: {currentUser.username}</p>
           )}
@@ -314,11 +452,13 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
 
 function Section({
   title,
+  badge,
   expanded,
   onToggle,
   children,
 }: {
   title: string;
+  badge?: number;
   expanded: boolean;
   onToggle: () => void;
   children: React.ReactNode;
@@ -330,16 +470,21 @@ function Section({
         className="w-full flex items-center gap-1 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-gray-200 transition-colors"
       >
         <svg
-          className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`}
+          className={`w-3 h-3 transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        {title}
+        <span className="flex-1 text-left">{title}</span>
+        {!!badge && badge > 0 && (
+          <span className="bg-amber-500 text-black text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
+            {badge}
+          </span>
+        )}
       </button>
-      {expanded && <div className="mt-0.5 space-y-0.5 px-1">{children}</div>}
+      {expanded && <div className="mt-0.5 space-y-0.5 pb-1">{children}</div>}
     </div>
   );
 }
@@ -358,7 +503,7 @@ function RoomRow({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left rounded-lg transition-colors ${
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left rounded-lg mx-1 transition-colors ${
         active ? 'bg-blue-600/20 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
       }`}
     >

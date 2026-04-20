@@ -6,6 +6,7 @@ import { RoomMember } from '../models/roomMember.model.js';
 import { Dialog } from '../models/dialog.model.js';
 import { FriendRequest } from '../models/friendRequest.model.js';
 import { UserBan } from '../models/userBan.model.js';
+import { User } from '../models/user.model.js';
 import {
   BadRequestError,
   ForbiddenError,
@@ -89,6 +90,26 @@ export async function getRoomMessages(
     data: messages.map(serializeMessage),
     nextCursor,
   };
+}
+
+// Internal: create a system message (e.g. "Alice joined the room")
+export async function createSystemRoomMessage(roomId: string, userId: string) {
+  const roomObjectId = new Types.ObjectId(roomId);
+  const userObjectId = new Types.ObjectId(userId);
+
+  const user = await User.findById(userObjectId).lean();
+  const username = user?.username ?? 'Someone';
+
+  const msg = await Message.create({
+    roomId: roomObjectId,
+    authorId: userObjectId,
+    content: `${username} joined the room`,
+    type: 'system',
+    replyToId: null,
+  });
+
+  await msg.populate('authorId', '_id username');
+  return serializeMessage(msg.toObject());
 }
 
 // POST /api/v1/rooms/:id/messages

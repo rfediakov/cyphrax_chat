@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
 import { useToast } from '../components/ui/Toast';
-import { respondToInvitation } from '../api/rooms.api';
+import { fetchPresenceStatuses } from '../api/presence.api';
 
 interface TypingPayload {
   userId: string;
@@ -31,6 +31,10 @@ interface WrappedMessagePayload {
 interface RoomEventPayload {
   event: string;
   roomId: string;
+  invitationId?: string;
+  invId?: string;
+  roomName?: string;
+  isPrivate?: boolean;
   [key: string]: unknown;
 }
 
@@ -65,11 +69,15 @@ export function useSocket() {
   const updateMessage = useChatStore((s) => s.updateMessage);
   const softDeleteMessage = useChatStore((s) => s.softDeleteMessage);
   const incrementUnread = useChatStore((s) => s.incrementUnread);
-  const setRooms = useChatStore((s) => s.setRooms);
+  const addPendingInvitation = useChatStore((s) => s.addPendingInvitation);
+  const addPendingFriendRequest = useChatStore((s) => s.addPendingFriendRequest);
+  const bumpContactsRefresh = useChatStore((s) => s.bumpContactsRefresh);
+  const bumpMembersRefresh = useChatStore((s) => s.bumpMembersRefresh);
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
   const setStatus = usePresenceStore((s) => s.setStatus);
+  const bulkSetStatuses = usePresenceStore((s) => s.bulkSetStatuses);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -101,6 +109,29 @@ export function useSocket() {
     socket.on('connect', () => {
       console.log('[Socket] connected', socket.id);
       setConnected(true);
+
+      // Hydrate presence store for all known peers
+      void (async () => {
+        try {
+          const { dialogs } = useChatStore.getState();
+          const peerIds = new Set<string>();
+
+          for (const d of dialogs ?? []) {
+            const otherId = d.otherUser?._id ?? d.otherUser?.id;
+            if (otherId) peerIds.add(otherId);
+            for (const p of d.participants ?? []) {
+              if (typeof p === 'string') peerIds.add(p);
+            }
+          }
+
+          if (peerIds.size === 0) return;
+
+          const statuses = await fetchPresenceStatuses([...peerIds]);
+          bulkSetStatuses(statuses);
+        } catch (err) {
+          console.warn('[Presence] Initial sync failed:', err);
+        }
+      })();
     });
 
     socket.on('disconnect', () => {
@@ -145,44 +176,65 @@ export function useSocket() {
 
     socket.on('room_event', (payload: RoomEventPayload) => {
       if (payload.event === 'invited') {
-        const roomName = (payload.roomName as string | undefined) ?? payload.roomId;
-        const invId = payload.invId as string | undefined;
-        showToast(
-          `You have been invited to #${roomName}`,
-          'info',
-          invId
-            ? [
-                {
-                  label: 'Accept',
-                  onClick: () => {
-                    void respondToInvitation(payload.roomId, invId, 'accept').then(() => {
-                      const rooms = useChatStore.getState().rooms;
-                      // Room will appear after next sidebar reload; trigger refresh if needed
-                      setRooms([...rooms]);
-                    });
-                  },
-                },
-                {
-                  label: 'Reject',
-                  onClick: () => {
-                    void respondToInvitation(payload.roomId, invId, 'reject');
-                  },
-                },
-              ]
-            : undefined
-        );
+        const roomName = payload.roomName ?? payload.roomId;
+        const invitationId = payload.invitationId ?? payload.invId;
+
+        if (invitationId) {
+          addPendingInvitation({
+            invitationId,
+            roomId: payload.roomId,
+            roomName: payload.roomName ?? payload.roomId,
+            isPrivate: payload.isPrivate ?? true,
+          });
+        }
+
+        showToast(`You have been invited to #${roomName}`, 'info');
+      }
+
+      // Any membership change → tell RightSidebar to refresh the member list
+      if (
+        payload.event === 'member_joined' ||
+        payload.event === 'member_left' ||
+        payload.event === 'member_banned' ||
+        payload.event === 'member_unbanned' ||
+        payload.event === 'admin_promoted' ||
+        payload.event === 'admin_demoted'
+      ) {
+        bumpMembersRefresh();
       }
     });
 
     socket.on(
       'friend_request',
-      (payload: { fromUser?: { _id: string; username: string }; fromUserId?: string }) => {
-        const username = payload.fromUser?.username;
-        if (username) {
-          showToast(`@${username} sent you a friend request.`, 'info');
-          return;
+      (payload: { fromUser?: { _id: string; username: string; email?: string }; fromUserId?: string; requestId?: string; id?: string }) => {
+        const user = payload.fromUser;
+        if (user) {
+          // Add to sidebar Contacts section so user can act on it immediately
+          addPendingFriendRequest({
+            id: payload.requestId ?? payload.id ?? `${user._id}-${Date.now()}`,
+            fromUser: {
+              id: user._id,
+              username: user.username,
+              email: user.email ?? '',
+            },
+            createdAt: new Date().toISOString(),
+          });
+          showToast(`@${user.username} sent you a friend request`, 'info');
+        } else {
+          showToast('You have a new friend request', 'info');
         }
-        showToast('You have a new friend request.', 'info');
+      },
+    );
+
+    socket.on(
+      'friend_request_accepted',
+      ({ acceptedBy }: { acceptedBy: { id: string; username: string }; dialogId: string }) => {
+        // Refresh sidebar so new contact + dialog appear for User-A
+        bumpContactsRefresh();
+        // Fetch presence for the newly connected peer
+        void fetchPresenceStatuses([acceptedBy.id])
+          .then((statuses) => bulkSetStatuses(statuses))
+          .catch(() => {});
       },
     );
 

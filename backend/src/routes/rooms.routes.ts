@@ -1,8 +1,39 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { Types } from 'mongoose';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as roomService from '../services/room.service.js';
+import { createSystemRoomMessage } from '../services/message.service.js';
 import { BadRequestError } from '../lib/errors.js';
 import { getIo } from '../lib/io.js';
+import { RoomMember } from '../models/roomMember.model.js';
+import { getPresenceStatuses } from '../presence/presence.manager.js';
+
+/**
+ * After a user joins a room socket room:
+ * 1. Pushes the new member's current presence to everyone already in the room.
+ * 2. Pushes every existing member's current presence to the new member.
+ * This bypasses the change-detection gate in evaluateAndBroadcastPresence.
+ */
+async function pushPresenceOnRoomJoin(roomId: string, newUserId: string): Promise<void> {
+  const io = getIo();
+  if (!io) return;
+
+  const memberships = await RoomMember.find({ roomId: new Types.ObjectId(roomId) }).lean();
+  const memberUserIds = memberships.map((m) => m.userId.toString());
+
+  const statuses = await getPresenceStatuses(memberUserIds);
+
+  // All existing members (and the new member themselves via the room socket) see the new member
+  io.to(`room:${roomId}`).emit('presence', {
+    userId: newUserId,
+    status: statuses[newUserId] ?? 'offline',
+  });
+
+  // New member sees every current member's presence
+  for (const [uid, status] of Object.entries(statuses)) {
+    io.to(`user:${newUserId}`).emit('presence', { userId: uid, status });
+  }
+}
 
 const router = Router();
 
@@ -28,6 +59,16 @@ router.get('/public', requireAuth, async (req: Request, res: Response, next: Nex
   }
 });
 
+// GET /api/v1/rooms/invitations/pending — pending invitations for current user
+router.get('/invitations/pending', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const invitations = await roomService.getPendingInvitations(req.user!._id);
+    res.json({ invitations });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/v1/rooms
 router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -39,8 +80,13 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
     if (!name) {
       throw new BadRequestError('name is required');
     }
-    const room = await roomService.createRoom(req.user!._id, { name, description, visibility });
+    const userId = req.user!._id;
+    const room = await roomService.createRoom(userId, { name, description, visibility });
     res.status(201).json({ room });
+
+    // Join the creator's live sockets to the new room channel so they receive
+    // real-time events (member_joined etc.) without needing a page reload.
+    await getIo()?.in(`user:${userId}`).socketsJoin(`room:${room.id}`);
   } catch (err) {
     next(err);
   }
@@ -92,12 +138,21 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response, next: Nex
 router.post('/:id/join', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as { id: string };
-    await roomService.joinRoom(id, req.user!._id);
+    const userId = req.user!._id;
+    await roomService.joinRoom(id, userId);
     res.json({ message: 'Joined room' });
 
-    getIo()
-      ?.to(`room:${id}`)
-      .emit('room_event', { event: 'member_joined', userId: req.user!._id, roomId: id });
+    const io = getIo();
+    if (io) {
+      // Add all of the user's live sockets to the room channel
+      await io.in(`user:${userId}`).socketsJoin(`room:${id}`);
+      io.to(`room:${id}`).emit('room_event', { event: 'member_joined', userId, roomId: id });
+      await pushPresenceOnRoomJoin(id, userId);
+
+      // Post a system message so all members see "X joined the room" in chat
+      const systemMsg = await createSystemRoomMessage(id, userId);
+      io.to(`room:${id}`).emit('message', { message: systemMsg });
+    }
   } catch (err) {
     next(err);
   }
@@ -235,7 +290,7 @@ router.post(
       if (!username) {
         throw new BadRequestError('username is required');
       }
-      const { invitedUserId, invitationId } = await roomService.sendInvitation(
+      const { invitedUserId, invitationId, roomName, isPrivate } = await roomService.sendInvitation(
         id,
         req.user!._id,
         username,
@@ -245,7 +300,7 @@ router.post(
       // Notify the invited user directly on their personal room channel
       getIo()
         ?.to(`user:${invitedUserId}`)
-        .emit('room_event', { event: 'invited', roomId: id, invitationId });
+        .emit('room_event', { event: 'invited', roomId: id, invitationId, roomName, isPrivate });
     } catch (err) {
       next(err);
     }
@@ -263,13 +318,22 @@ router.put(
       if (action !== 'accept' && action !== 'reject') {
         throw new BadRequestError('action must be "accept" or "reject"');
       }
-      const { accepted } = await roomService.respondToInvitation(id, req.user!._id, invId, action);
+      const userId = req.user!._id;
+      const { accepted } = await roomService.respondToInvitation(id, userId, invId, action);
       res.json({ message: `Invitation ${action}ed` });
 
       if (accepted) {
-        getIo()
-          ?.to(`room:${id}`)
-          .emit('room_event', { event: 'member_joined', userId: req.user!._id, roomId: id });
+        const io = getIo();
+        if (io) {
+          // Add all of the accepting user's live sockets to the room channel
+          await io.in(`user:${userId}`).socketsJoin(`room:${id}`);
+          io.to(`room:${id}`).emit('room_event', { event: 'member_joined', userId, roomId: id });
+          await pushPresenceOnRoomJoin(id, userId);
+
+          // Post a system message so all members see "X joined the room" in chat
+          const systemMsg = await createSystemRoomMessage(id, userId);
+          io.to(`room:${id}`).emit('message', { message: systemMsg });
+        }
       }
     } catch (err) {
       next(err);

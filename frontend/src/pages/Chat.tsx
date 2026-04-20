@@ -37,6 +37,7 @@ export default function Chat() {
   const { socket } = useSocket();
 
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
   // Determine the active context
   const activeContext = (() => {
@@ -63,6 +64,11 @@ export default function Chat() {
 
   const typingUsers = useTypingUsers(activeContext?.contextId ?? null);
 
+  // Close mobile right panel when switching rooms
+  useEffect(() => {
+    setRightSidebarOpen(false);
+  }, [activeRoomId]);
+
   // Clear unread and emit read event when opening a context
   useEffect(() => {
     if (!activeContext) return;
@@ -75,14 +81,37 @@ export default function Chat() {
     }
   }, [activeContext?.contextId, socket]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Activity tracking on mouse move (throttled inside useSocket)
+  // Activity tracking: mouse, keyboard, and page visibility — throttled to 10s
   useEffect(() => {
-    const handler = () => {
-      if (socket) socket.emit('activity');
+    if (!socket) return;
+
+    const THROTTLE_MS = 10_000;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const emitActivity = () => {
+      if (timer) return;
+      socket.emit('activity');
+      timer = setTimeout(() => {
+        timer = null;
+      }, THROTTLE_MS);
     };
-    // Very coarse: only attach once, throttle within socket hook
-    window.addEventListener('mousemove', handler, { passive: true });
-    return () => window.removeEventListener('mousemove', handler);
+
+    const handleVisibility = () => {
+      if (!document.hidden) emitActivity();
+    };
+
+    window.addEventListener('mousemove', emitActivity, { passive: true });
+    window.addEventListener('keydown', emitActivity, { passive: true });
+    window.addEventListener('focus', emitActivity);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('mousemove', emitActivity);
+      window.removeEventListener('keydown', emitActivity);
+      window.removeEventListener('focus', emitActivity);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (timer) clearTimeout(timer);
+    };
   }, [socket]);
 
   const handleReply = useCallback((message: Message) => {
@@ -123,11 +152,30 @@ export default function Chat() {
                 </button>
                 <span className="text-gray-400 text-sm">{activeContext.contextType === 'room' ? '#' : '@'}</span>
                 <h1 className="font-semibold text-white text-sm truncate min-w-0">{activeContext.name}</h1>
-                {currentUser && (
-                  <span className="ml-auto text-xs text-gray-500">
-                    Signed in as <span className="text-gray-300">@{currentUser.username}</span>
-                  </span>
-                )}
+                <div className="ml-auto flex items-center gap-1 shrink-0">
+                  {currentUser && (
+                    <span className="text-xs text-gray-500 hidden lg:inline">
+                      Signed in as <span className="text-gray-300">@{currentUser.username}</span>
+                    </span>
+                  )}
+                  {activeRoomId && (
+                    <button
+                      type="button"
+                      onClick={() => setRightSidebarOpen((v) => !v)}
+                      className={`lg:hidden p-2 rounded-lg transition-colors ${
+                        rightSidebarOpen
+                          ? 'bg-gray-700 text-white'
+                          : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                      }`}
+                      aria-label="Toggle members panel"
+                      aria-expanded={rightSidebarOpen}
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Messages */}
@@ -149,6 +197,7 @@ export default function Chat() {
                 dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
                 replyTo={replyTo}
                 onClearReply={handleClearReply}
+                socket={socket}
               />
             </>
           ) : (
@@ -157,7 +206,7 @@ export default function Chat() {
         </main>
 
         {/* Right sidebar */}
-        <RightSidebar />
+        <RightSidebar isOpen={rightSidebarOpen} onClose={() => setRightSidebarOpen(false)} />
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useChatStore } from '../../store/chat.store';
 import { useInfiniteMessages } from '../../hooks/useInfiniteMessages';
-import { MessageItem } from './MessageItem';
+import { MessageItem, SystemMessageItem } from './MessageItem';
 import { editRoomMessage, deleteRoomMessage, editDialogMessage, deleteDialogMessage } from '../../api/messages.api';
 import type { Message } from '../../store/chat.store';
 
@@ -154,16 +154,20 @@ export function MessageList({
           <p className="text-center text-gray-500 text-sm mt-8">No messages yet. Say hello!</p>
         )}
 
-        {messages.map((msg) => (
-          <MessageItem
-            key={msg._id}
-            message={msg}
-            isAdmin={isAdmin}
-            onReply={onReply}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
-        ))}
+        {messages.map((msg) =>
+          msg.type === 'system' ? (
+            <SystemMessageItem key={msg._id} message={msg} />
+          ) : (
+            <MessageItem
+              key={msg._id}
+              message={msg}
+              isAdmin={isAdmin}
+              onReply={onReply}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          )
+        )}
 
         {/* Typing indicators */}
         {typingUsers.length > 0 && (

@@ -90,6 +90,23 @@ export function subscribePresence(subClient: Redis, io: Server): void {
 }
 
 /**
+ * Returns the current evaluated presence status for each userId in the array.
+ * Reads Redis directly — does not publish any events.
+ */
+export async function getPresenceStatuses(
+  userIds: string[]
+): Promise<Record<string, PresenceStatus>> {
+  const result: Record<string, PresenceStatus> = {};
+  await Promise.all(
+    userIds.map(async (userId) => {
+      const tabs = await getPresenceTabs(userId);
+      result[userId] = evaluatePresence(tabs);
+    })
+  );
+  return result;
+}
+
+/**
  * Compute the current presence status for a user and publish it if it has changed
  * from the last known status stored in Redis.
  */

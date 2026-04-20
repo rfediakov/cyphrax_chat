@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import EmojiPicker, { type EmojiClickData } from 'emoji-picker-react';
+import type { Socket } from 'socket.io-client';
 import { uploadAttachment } from '../../api/attachments.api';
 import { sendRoomMessage, sendDialogMessage } from '../../api/messages.api';
 import { useChatStore } from '../../store/chat.store';
-import { useSocket } from '../../hooks/useSocket';
 import type { Message } from '../../store/chat.store';
 
 interface MessageInputProps {
@@ -12,6 +12,7 @@ interface MessageInputProps {
   dialogUserId?: string;
   replyTo: Message | null;
   onClearReply: () => void;
+  socket: Socket | null;
 }
 
 export function MessageInput({
@@ -20,6 +21,7 @@ export function MessageInput({
   dialogUserId,
   replyTo,
   onClearReply,
+  socket,
 }: MessageInputProps) {
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
@@ -34,7 +36,6 @@ export function MessageInput({
   const emojiRef = useRef<HTMLDivElement>(null);
 
   const appendMessage = useChatStore((s) => s.appendMessage);
-  const { socket } = useSocket();
 
   // Auto-resize textarea
   const adjustHeight = () => {

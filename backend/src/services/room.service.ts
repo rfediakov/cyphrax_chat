@@ -358,15 +358,36 @@ export async function getBans(roomId: string, callerId: string) {
   }));
 }
 
+// GET /api/v1/rooms/invitations/pending  — all pending invitations for current user
+export async function getPendingInvitations(userId: string) {
+  type PopulatedRoom = { _id: Types.ObjectId; name: string; visibility: string };
+  const invitations = await RoomInvitation.find({
+    invitedUser: new Types.ObjectId(userId),
+    status: 'pending',
+  })
+    .populate<{ roomId: PopulatedRoom }>('roomId', '_id name visibility')
+    .lean();
+
+  return invitations.map((inv) => {
+    const room = inv.roomId as unknown as PopulatedRoom;
+    return {
+      invitationId: String(inv._id),
+      roomId: String(room._id),
+      roomName: room.name,
+      isPrivate: room.visibility === 'private',
+    };
+  });
+}
+
 // POST /api/v1/rooms/:id/invitations  — invite user to private room (admin/owner)
 export async function sendInvitation(
   roomId: string,
   callerId: string,
   username: string,
-): Promise<{ invitedUserId: string; invitationId: string }> {
+): Promise<{ invitedUserId: string; invitationId: string; roomName: string; isPrivate: boolean }> {
   const roomObjectId = new Types.ObjectId(roomId);
 
-  await requireAdminOrOwner(roomObjectId, callerId);
+  const { room } = await requireAdminOrOwner(roomObjectId, callerId);
 
   const target = await User.findOne({ username, deletedAt: null }).lean();
   if (!target) {
@@ -404,6 +425,8 @@ export async function sendInvitation(
   return {
     invitedUserId: targetObjectId.toString(),
     invitationId: invitation._id.toString(),
+    roomName: room.name,
+    isPrivate: room.visibility === 'private',
   };
 }
 

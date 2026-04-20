@@ -1,8 +1,11 @@
 import { create } from 'zustand';
+import type { PendingInvitation } from '../api/rooms.api';
+import type { PendingFriendRequest } from '../api/contacts.api';
 
 export interface Message {
   _id: string;
   content: string;
+  type?: 'user' | 'system';
   author: {
     _id: string;
     username: string;
@@ -57,11 +60,23 @@ interface ChatState {
   dialogs: Dialog[];
   messages: Record<string, Message[]>;
   unreadCounts: Record<string, number>;
+  pendingInvitations: PendingInvitation[];
+  pendingFriendRequests: PendingFriendRequest[];
+  contactsRefreshToken: number;
+  membersRefreshToken: number;
 
   setActiveRoom: (id: string | null) => void;
   setActiveDialog: (userId: string | null) => void;
   setRooms: (rooms: Room[]) => void;
   setDialogs: (dialogs: Dialog[]) => void;
+  setPendingInvitations: (invitations: PendingInvitation[]) => void;
+  addPendingInvitation: (inv: PendingInvitation) => void;
+  removePendingInvitation: (invitationId: string) => void;
+  setPendingFriendRequests: (requests: PendingFriendRequest[]) => void;
+  addPendingFriendRequest: (req: PendingFriendRequest) => void;
+  removePendingFriendRequest: (requestId: string) => void;
+  bumpContactsRefresh: () => void;
+  bumpMembersRefresh: () => void;
   appendMessage: (contextId: string, msg: Message) => void;
   prependMessages: (contextId: string, msgs: Message[]) => void;
   updateMessage: (contextId: string, msg: Message) => void;
@@ -77,6 +92,10 @@ export const useChatStore = create<ChatState>((set) => ({
   dialogs: [],
   messages: {},
   unreadCounts: {},
+  pendingInvitations: [],
+  pendingFriendRequests: [],
+  contactsRefreshToken: 0,
+  membersRefreshToken: 0,
 
   setActiveRoom: (id) =>
     set({ activeRoomId: id, activeDialogUserId: null }),
@@ -87,6 +106,40 @@ export const useChatStore = create<ChatState>((set) => ({
   setRooms: (rooms) => set({ rooms }),
 
   setDialogs: (dialogs) => set({ dialogs }),
+
+  setPendingInvitations: (invitations) => set({ pendingInvitations: invitations }),
+
+  addPendingInvitation: (inv) =>
+    set((state) => {
+      if (state.pendingInvitations.some((i) => i.invitationId === inv.invitationId)) {
+        return state;
+      }
+      return { pendingInvitations: [...state.pendingInvitations, inv] };
+    }),
+
+  removePendingInvitation: (invitationId) =>
+    set((state) => ({
+      pendingInvitations: state.pendingInvitations.filter((i) => i.invitationId !== invitationId),
+    })),
+
+  setPendingFriendRequests: (requests) => set({ pendingFriendRequests: requests }),
+
+  addPendingFriendRequest: (req) =>
+    set((state) => {
+      if (state.pendingFriendRequests.some((r) => r.id === req.id)) return state;
+      return { pendingFriendRequests: [...state.pendingFriendRequests, req] };
+    }),
+
+  removePendingFriendRequest: (requestId) =>
+    set((state) => ({
+      pendingFriendRequests: state.pendingFriendRequests.filter((r) => r.id !== requestId),
+    })),
+
+  bumpContactsRefresh: () =>
+    set((state) => ({ contactsRefreshToken: state.contactsRefreshToken + 1 })),
+
+  bumpMembersRefresh: () =>
+    set((state) => ({ membersRefreshToken: state.membersRefreshToken + 1 })),
 
   appendMessage: (contextId, msg) =>
     set((state) => {
