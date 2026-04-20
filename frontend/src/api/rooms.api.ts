@@ -117,6 +117,15 @@ export const unbanMember = (roomId: string, userId: string) =>
 export const getBans = (roomId: string) =>
   api.get<{ bans: unknown[] }>(`/rooms/${roomId}/bans`);
 
+export interface PendingInvitation {
+  invitationId: string;
+  roomId: string;
+  roomName: string;
+}
+
+export const getPendingInvitations = () =>
+  api.get<{ invitations: PendingInvitation[] }>('/rooms/invitations/pending');
+
 export const sendInvitation = (roomId: string, username: string) =>
   api.post(`/rooms/${roomId}/invitations`, { username });
 

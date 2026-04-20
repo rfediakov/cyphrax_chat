@@ -4,7 +4,6 @@ import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
 import { useToast } from '../components/ui/Toast';
-import { getMyRooms, normalizeRoom, respondToInvitation } from '../api/rooms.api';
 
 interface TypingPayload {
   userId: string;
@@ -68,7 +67,7 @@ export function useSocket() {
   const updateMessage = useChatStore((s) => s.updateMessage);
   const softDeleteMessage = useChatStore((s) => s.softDeleteMessage);
   const incrementUnread = useChatStore((s) => s.incrementUnread);
-  const setRooms = useChatStore((s) => s.setRooms);
+  const addPendingInvitation = useChatStore((s) => s.addPendingInvitation);
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
@@ -150,35 +149,20 @@ export function useSocket() {
       if (payload.event === 'invited') {
         const roomName = payload.roomName ?? payload.roomId;
         const invitationId = payload.invitationId ?? payload.invId;
+
+        // Add to persistent sidebar list so it survives page reloads
+        if (invitationId) {
+          addPendingInvitation({
+            invitationId,
+            roomId: payload.roomId,
+            roomName: payload.roomName ?? payload.roomId,
+          });
+        }
+
+        // Also show a brief toast nudge pointing the user to the sidebar
         showToast(
-          `You have been invited to #${roomName}`,
+          `You have been invited to #${roomName} — see Invitations in the sidebar`,
           'info',
-          invitationId
-            ? [
-                {
-                  label: 'Accept',
-                  onClick: () => {
-                    void respondToInvitation(payload.roomId, invitationId, 'accept').then(async () => {
-                      try {
-                        const roomsRes = await getMyRooms();
-                        const next = (roomsRes.data.rooms ?? []).map((r) =>
-                          normalizeRoom(r as unknown as Record<string, unknown>),
-                        );
-                        setRooms(next);
-                      } catch {
-                        /* sidebar will refresh on next navigation */
-                      }
-                    });
-                  },
-                },
-                {
-                  label: 'Reject',
-                  onClick: () => {
-                    void respondToInvitation(payload.roomId, invitationId, 'reject');
-                  },
-                },
-              ]
-            : undefined
         );
       }
     });

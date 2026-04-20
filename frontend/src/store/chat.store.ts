@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { PendingInvitation } from '../api/rooms.api';
 
 export interface Message {
   _id: string;
@@ -57,11 +58,15 @@ interface ChatState {
   dialogs: Dialog[];
   messages: Record<string, Message[]>;
   unreadCounts: Record<string, number>;
+  pendingInvitations: PendingInvitation[];
 
   setActiveRoom: (id: string | null) => void;
   setActiveDialog: (userId: string | null) => void;
   setRooms: (rooms: Room[]) => void;
   setDialogs: (dialogs: Dialog[]) => void;
+  setPendingInvitations: (invitations: PendingInvitation[]) => void;
+  addPendingInvitation: (inv: PendingInvitation) => void;
+  removePendingInvitation: (invitationId: string) => void;
   appendMessage: (contextId: string, msg: Message) => void;
   prependMessages: (contextId: string, msgs: Message[]) => void;
   updateMessage: (contextId: string, msg: Message) => void;
@@ -77,6 +82,7 @@ export const useChatStore = create<ChatState>((set) => ({
   dialogs: [],
   messages: {},
   unreadCounts: {},
+  pendingInvitations: [],
 
   setActiveRoom: (id) =>
     set({ activeRoomId: id, activeDialogUserId: null }),
@@ -87,6 +93,21 @@ export const useChatStore = create<ChatState>((set) => ({
   setRooms: (rooms) => set({ rooms }),
 
   setDialogs: (dialogs) => set({ dialogs }),
+
+  setPendingInvitations: (invitations) => set({ pendingInvitations: invitations }),
+
+  addPendingInvitation: (inv) =>
+    set((state) => {
+      if (state.pendingInvitations.some((i) => i.invitationId === inv.invitationId)) {
+        return state;
+      }
+      return { pendingInvitations: [...state.pendingInvitations, inv] };
+    }),
+
+  removePendingInvitation: (invitationId) =>
+    set((state) => ({
+      pendingInvitations: state.pendingInvitations.filter((i) => i.invitationId !== invitationId),
+    })),
 
   appendMessage: (contextId, msg) =>
     set((state) => {

@@ -28,6 +28,16 @@ router.get('/public', requireAuth, async (req: Request, res: Response, next: Nex
   }
 });
 
+// GET /api/v1/rooms/invitations/pending — pending invitations for current user
+router.get('/invitations/pending', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const invitations = await roomService.getPendingInvitations(req.user!._id);
+    res.json({ invitations });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/v1/rooms
 router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -3,10 +3,17 @@ import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
 import { getContacts, normalizeContact } from '../../api/contacts.api';
-import { getMyRooms, createRoom, normalizeRoom } from '../../api/rooms.api';
+import {
+  getMyRooms,
+  createRoom,
+  normalizeRoom,
+  getPendingInvitations,
+  respondToInvitation,
+} from '../../api/rooms.api';
 import { getDialogs } from '../../api/messages.api';
 import type { Contact } from '../../api/contacts.api';
 import type { Room, Dialog } from '../../store/chat.store';
+import type { PendingInvitation } from '../../api/rooms.api';
 import { findDialogWithUser, getDialogRecordId } from '../../lib/dialogs';
 
 type PresenceStatus = 'online' | 'afk' | 'offline';
@@ -133,7 +140,11 @@ interface LeftSidebarProps {
 }
 
 export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
-  const { activeRoomId, activeDialogUserId, rooms, dialogs, unreadCounts, setRooms, setDialogs, setActiveRoom, setActiveDialog } = useChatStore();
+  const {
+    activeRoomId, activeDialogUserId, rooms, dialogs, unreadCounts,
+    setRooms, setDialogs, setActiveRoom, setActiveDialog,
+    pendingInvitations, setPendingInvitations, removePendingInvitation,
+  } = useChatStore();
   const currentUser = useAuthStore((s) => s.user);
   const { getStatus } = usePresence();
 
@@ -142,14 +153,17 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
   const [publicExpanded, setPublicExpanded] = useState(true);
   const [privateExpanded, setPrivateExpanded] = useState(true);
   const [contactsExpanded, setContactsExpanded] = useState(true);
+  const [invitationsExpanded, setInvitationsExpanded] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [respondingInv, setRespondingInv] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [roomsRes, dialogsRes, contactsRes] = await Promise.all([
+      const [roomsRes, dialogsRes, contactsRes, invRes] = await Promise.all([
         getMyRooms(),
         getDialogs(),
         getContacts(),
+        getPendingInvitations(),
       ]);
       setRooms((roomsRes.data.rooms ?? []).map((r) => normalizeRoom(r as unknown as Record<string, unknown>)));
       setDialogs(dialogsRes.data.dialogs ?? []);
@@ -158,10 +172,32 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
           .map(normalizeContact)
           .filter((c): c is Contact => c !== null)
       );
+      setPendingInvitations(invRes.data.invitations ?? []);
     } catch {
       // Silently fail — user might not be fully loaded yet
     }
-  }, [setRooms, setDialogs]);
+  }, [setRooms, setDialogs, setPendingInvitations]);
+
+  const handleInvitationRespond = useCallback(async (
+    roomId: string,
+    invitationId: string,
+    action: 'accept' | 'reject',
+  ) => {
+    setRespondingInv(invitationId);
+    try {
+      await respondToInvitation(roomId, invitationId, action);
+      removePendingInvitation(invitationId);
+      if (action === 'accept') {
+        // Refresh rooms so the accepted private room appears in the sidebar
+        const roomsRes = await getMyRooms();
+        setRooms((roomsRes.data.rooms ?? []).map((r) => normalizeRoom(r as unknown as Record<string, unknown>)));
+      }
+    } catch {
+      // Keep the invitation visible so the user can retry
+    } finally {
+      setRespondingInv(null);
+    }
+  }, [removePendingInvitation, setRooms]);
 
   useEffect(() => {
     loadData();
@@ -253,6 +289,16 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
             <p className="px-3 py-1 text-xs text-gray-600">No private rooms</p>
           )}
         </Section>
+
+        {pendingInvitations.length > 0 && (
+          <InvitationsSection
+            invitations={pendingInvitations}
+            expanded={invitationsExpanded}
+            respondingId={respondingInv}
+            onToggle={() => setInvitationsExpanded((v) => !v)}
+            onRespond={handleInvitationRespond}
+          />
+        )}
 
         {/* CONTACTS section */}
         <Section
@@ -366,5 +412,77 @@ function RoomRow({
       <span className="text-sm truncate flex-1">{room.name}</span>
       {unread > 0 && <UnreadBadge count={unread} />}
     </button>
+  );
+}
+
+function InvitationsSection({
+  invitations,
+  expanded,
+  respondingId,
+  onToggle,
+  onRespond,
+}: {
+  invitations: PendingInvitation[];
+  expanded: boolean;
+  respondingId: string | null;
+  onToggle: () => void;
+  onRespond: (roomId: string, invitationId: string, action: 'accept' | 'reject') => void;
+}) {
+  return (
+    <div className="py-1">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-1 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-amber-400 hover:text-amber-200 transition-colors"
+      >
+        <svg
+          className={`w-3 h-3 transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+        <span className="flex-1 text-left">Invitations</span>
+        <span className="bg-amber-500 text-black text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
+          {invitations.length}
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-0.5 space-y-1 px-1">
+          {invitations.map((inv) => {
+            const busy = respondingId === inv.invitationId;
+            return (
+              <div
+                key={inv.invitationId}
+                className="flex flex-col gap-1 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20"
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-sm text-gray-200 truncate font-medium">#{inv.roomName}</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => onRespond(inv.roomId, inv.invitationId, 'accept')}
+                    disabled={busy}
+                    className="flex-1 text-xs py-1 px-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors font-medium"
+                  >
+                    {busy ? '…' : 'Accept'}
+                  </button>
+                  <button
+                    onClick={() => onRespond(inv.roomId, inv.invitationId, 'reject')}
+                    disabled={busy}
+                    className="flex-1 text-xs py-1 px-2 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 transition-colors"
+                  >
+                    {busy ? '…' : 'Decline'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
