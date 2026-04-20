@@ -363,10 +363,10 @@ export async function sendInvitation(
   roomId: string,
   callerId: string,
   username: string,
-): Promise<{ invitedUserId: string; invitationId: string }> {
+): Promise<{ invitedUserId: string; invitationId: string; roomName: string }> {
   const roomObjectId = new Types.ObjectId(roomId);
 
-  await requireAdminOrOwner(roomObjectId, callerId);
+  const { room } = await requireAdminOrOwner(roomObjectId, callerId);
 
   const target = await User.findOne({ username, deletedAt: null }).lean();
   if (!target) {
@@ -404,6 +404,7 @@ export async function sendInvitation(
   return {
     invitedUserId: targetObjectId.toString(),
     invitationId: invitation._id.toString(),
+    roomName: room.name,
   };
 }
 

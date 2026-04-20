@@ -235,7 +235,7 @@ router.post(
       if (!username) {
         throw new BadRequestError('username is required');
       }
-      const { invitedUserId, invitationId } = await roomService.sendInvitation(
+      const { invitedUserId, invitationId, roomName } = await roomService.sendInvitation(
         id,
         req.user!._id,
         username,
@@ -245,7 +245,7 @@ router.post(
       // Notify the invited user directly on their personal room channel
       getIo()
         ?.to(`user:${invitedUserId}`)
-        .emit('room_event', { event: 'invited', roomId: id, invitationId });
+        .emit('room_event', { event: 'invited', roomId: id, invitationId, roomName });
     } catch (err) {
       next(err);
     }

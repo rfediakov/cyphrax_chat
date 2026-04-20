@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
 import { useToast } from '../components/ui/Toast';
-import { respondToInvitation } from '../api/rooms.api';
+import { getMyRooms, normalizeRoom, respondToInvitation } from '../api/rooms.api';
 
 interface TypingPayload {
   userId: string;
@@ -31,6 +31,9 @@ interface WrappedMessagePayload {
 interface RoomEventPayload {
   event: string;
   roomId: string;
+  invitationId?: string;
+  invId?: string;
+  roomName?: string;
   [key: string]: unknown;
 }
 
@@ -145,27 +148,33 @@ export function useSocket() {
 
     socket.on('room_event', (payload: RoomEventPayload) => {
       if (payload.event === 'invited') {
-        const roomName = (payload.roomName as string | undefined) ?? payload.roomId;
-        const invId = payload.invId as string | undefined;
+        const roomName = payload.roomName ?? payload.roomId;
+        const invitationId = payload.invitationId ?? payload.invId;
         showToast(
           `You have been invited to #${roomName}`,
           'info',
-          invId
+          invitationId
             ? [
                 {
                   label: 'Accept',
                   onClick: () => {
-                    void respondToInvitation(payload.roomId, invId, 'accept').then(() => {
-                      const rooms = useChatStore.getState().rooms;
-                      // Room will appear after next sidebar reload; trigger refresh if needed
-                      setRooms([...rooms]);
+                    void respondToInvitation(payload.roomId, invitationId, 'accept').then(async () => {
+                      try {
+                        const roomsRes = await getMyRooms();
+                        const next = (roomsRes.data.rooms ?? []).map((r) =>
+                          normalizeRoom(r as unknown as Record<string, unknown>),
+                        );
+                        setRooms(next);
+                      } catch {
+                        /* sidebar will refresh on next navigation */
+                      }
                     });
                   },
                 },
                 {
                   label: 'Reject',
                   onClick: () => {
-                    void respondToInvitation(payload.roomId, invId, 'reject');
+                    void respondToInvitation(payload.roomId, invitationId, 'reject');
                   },
                 },
               ]
