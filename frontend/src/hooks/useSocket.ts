@@ -72,6 +72,7 @@ export function useSocket() {
   const addPendingInvitation = useChatStore((s) => s.addPendingInvitation);
   const addPendingFriendRequest = useChatStore((s) => s.addPendingFriendRequest);
   const bumpContactsRefresh = useChatStore((s) => s.bumpContactsRefresh);
+  const bumpMembersRefresh = useChatStore((s) => s.bumpMembersRefresh);
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
@@ -178,7 +179,6 @@ export function useSocket() {
         const roomName = payload.roomName ?? payload.roomId;
         const invitationId = payload.invitationId ?? payload.invId;
 
-        // Add to persistent sidebar list so it survives page reloads
         if (invitationId) {
           addPendingInvitation({
             invitationId,
@@ -188,8 +188,19 @@ export function useSocket() {
           });
         }
 
-        // Brief nudge toast — the card in the sidebar is the actionable element
         showToast(`You have been invited to #${roomName}`, 'info');
+      }
+
+      // Any membership change → tell RightSidebar to refresh the member list
+      if (
+        payload.event === 'member_joined' ||
+        payload.event === 'member_left' ||
+        payload.event === 'member_banned' ||
+        payload.event === 'member_unbanned' ||
+        payload.event === 'admin_promoted' ||
+        payload.event === 'admin_demoted'
+      ) {
+        bumpMembersRefresh();
       }
     });
 

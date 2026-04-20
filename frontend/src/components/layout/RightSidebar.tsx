@@ -42,6 +42,7 @@ export function RightSidebar() {
   const [inviteMsg, setInviteMsg] = useState('');
   const [showManageModal, setShowManageModal] = useState(false);
 
+  const membersRefreshToken = useChatStore((s) => s.membersRefreshToken);
   const activeRoom = activeRoomId ? rooms.find((r) => r._id === activeRoomId) : null;
 
   const loadRoomData = useCallback(async (roomId: string) => {
@@ -68,7 +69,7 @@ export function RightSidebar() {
       setRoomDetails(null);
       setMembers([]);
     }
-  }, [activeRoomId, loadRoomData]);
+  }, [activeRoomId, loadRoomData, membersRefreshToken]);
 
   const handleInvite = async () => {
     if (!activeRoomId || !inviteUsername.trim()) return;
