@@ -1,9 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { Types } from 'mongoose';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as contactService from '../services/contact.service.js';
-import { BadRequestError } from '../lib/errors.js';
+import { BadRequestError, NotFoundError } from '../lib/errors.js';
 import { getIo } from '../lib/io.js';
 import { User } from '../models/user.model.js';
+import { FriendRequest } from '../models/friendRequest.model.js';
+import { Dialog } from '../models/dialog.model.js';
 
 const router = Router();
 
@@ -58,8 +61,52 @@ router.put(
       if (action !== 'accept' && action !== 'reject') {
         throw new BadRequestError('action must be "accept" or "reject"');
       }
+
+      // Fetch request before responding so we have fromUserId for socket work
+      const friendRequest = await FriendRequest.findOne({
+        _id: id,
+        toUser: new Types.ObjectId(req.user!._id),
+        status: 'pending',
+      }).lean();
+      if (!friendRequest) throw new NotFoundError('Friend request not found');
+
       await contactService.respondToFriendRequest(req.user!._id, id, action);
       res.json({ message: `Friend request ${action}ed` });
+
+      if (action === 'accept') {
+        const fromUserId = friendRequest.fromUser.toString();
+        const toUserId = req.user!._id;
+
+        // Create the dialog eagerly so both sockets can join the room now
+        const sorted = [new Types.ObjectId(fromUserId), new Types.ObjectId(toUserId)].sort(
+          (a, b) => a.toString().localeCompare(b.toString()),
+        );
+        const dialog = await Dialog.findOneAndUpdate(
+          { participants: sorted },
+          { participants: sorted },
+          { upsert: true, new: true },
+        ).lean();
+        const dialogId = dialog!._id.toString();
+
+        // Fetch accepting user's info for the notification payload
+        const acceptor = await User.findById(toUserId).select('username').lean();
+
+        const io = getIo();
+        if (io) {
+          // Join both users' live sockets into the new dialog room
+          await io.in(`user:${fromUserId}`).socketsJoin(`dialog:${dialogId}`);
+          await io.in(`user:${toUserId}`).socketsJoin(`dialog:${dialogId}`);
+
+          // Notify User-A that their request was accepted and a dialog is ready
+          io.to(`user:${fromUserId}`).emit('friend_request_accepted', {
+            acceptedBy: {
+              id: toUserId,
+              username: acceptor?.username ?? 'Someone',
+            },
+            dialogId,
+          });
+        }
+      }
     } catch (err) {
       next(err);
     }

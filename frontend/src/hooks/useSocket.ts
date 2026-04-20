@@ -71,6 +71,7 @@ export function useSocket() {
   const incrementUnread = useChatStore((s) => s.incrementUnread);
   const addPendingInvitation = useChatStore((s) => s.addPendingInvitation);
   const addPendingFriendRequest = useChatStore((s) => s.addPendingFriendRequest);
+  const bumpContactsRefresh = useChatStore((s) => s.bumpContactsRefresh);
   const activeRoomId = useChatStore((s) => s.activeRoomId);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
 
@@ -211,6 +212,18 @@ export function useSocket() {
         } else {
           showToast('You have a new friend request', 'info');
         }
+      },
+    );
+
+    socket.on(
+      'friend_request_accepted',
+      ({ acceptedBy }: { acceptedBy: { id: string; username: string }; dialogId: string }) => {
+        // Refresh sidebar so new contact + dialog appear for User-A
+        bumpContactsRefresh();
+        // Fetch presence for the newly connected peer
+        void fetchPresenceStatuses([acceptedBy.id])
+          .then((statuses) => bulkSetStatuses(statuses))
+          .catch(() => {});
       },
     );
 

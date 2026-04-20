@@ -253,13 +253,14 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
       await respondToRequest(req.id, action);
       removePendingFriendRequest(req.id);
       if (action === 'accept') {
-        // Reload contacts so the new friend appears
-        const contactsRes = await getContacts();
+        // Reload contacts and dialogs so the new friend and dialog channel appear
+        const [contactsRes, dialogsRes] = await Promise.all([getContacts(), getDialogs()]);
         setContacts(
           (contactsRes.data.contacts ?? [])
             .map(normalizeContact)
             .filter((c): c is Contact => c !== null),
         );
+        setDialogs(dialogsRes.data.dialogs ?? []);
       }
     } catch {
       // Keep visible so user can retry
@@ -268,9 +269,11 @@ export function LeftSidebar({ mobileHidden }: LeftSidebarProps) {
     }
   }, [removePendingFriendRequest]);
 
+  const contactsRefreshToken = useChatStore((s) => s.contactsRefreshToken);
+
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, contactsRefreshToken]);
 
   const safeRooms = rooms ?? [];
   const safeContacts = contacts ?? [];

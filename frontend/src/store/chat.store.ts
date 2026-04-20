@@ -61,6 +61,7 @@ interface ChatState {
   unreadCounts: Record<string, number>;
   pendingInvitations: PendingInvitation[];
   pendingFriendRequests: PendingFriendRequest[];
+  contactsRefreshToken: number;
 
   setActiveRoom: (id: string | null) => void;
   setActiveDialog: (userId: string | null) => void;
@@ -72,6 +73,7 @@ interface ChatState {
   setPendingFriendRequests: (requests: PendingFriendRequest[]) => void;
   addPendingFriendRequest: (req: PendingFriendRequest) => void;
   removePendingFriendRequest: (requestId: string) => void;
+  bumpContactsRefresh: () => void;
   appendMessage: (contextId: string, msg: Message) => void;
   prependMessages: (contextId: string, msgs: Message[]) => void;
   updateMessage: (contextId: string, msg: Message) => void;
@@ -89,6 +91,7 @@ export const useChatStore = create<ChatState>((set) => ({
   unreadCounts: {},
   pendingInvitations: [],
   pendingFriendRequests: [],
+  contactsRefreshToken: 0,
 
   setActiveRoom: (id) =>
     set({ activeRoomId: id, activeDialogUserId: null }),
@@ -127,6 +130,9 @@ export const useChatStore = create<ChatState>((set) => ({
     set((state) => ({
       pendingFriendRequests: state.pendingFriendRequests.filter((r) => r.id !== requestId),
     })),
+
+  bumpContactsRefresh: () =>
+    set((state) => ({ contactsRefreshToken: state.contactsRefreshToken + 1 })),
 
   appendMessage: (contextId, msg) =>
     set((state) => {
