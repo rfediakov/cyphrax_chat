@@ -2,6 +2,16 @@ import { useState, useRef } from 'react';
 import type { Message } from '../../store/chat.store';
 import { useAuthStore } from '../../store/auth.store';
 
+export function SystemMessageItem({ message }: { message: Message }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-1.5">
+      <div className="flex-1 h-px bg-gray-700/60" />
+      <span className="text-xs text-gray-500 shrink-0 select-none">{message.content}</span>
+      <div className="flex-1 h-px bg-gray-700/60" />
+    </div>
+  );
+}
+
 interface MessageItemProps {
   message: Message;
   onReply: (message: Message) => void;

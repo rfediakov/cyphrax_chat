@@ -5,6 +5,7 @@ import type { PendingFriendRequest } from '../api/contacts.api';
 export interface Message {
   _id: string;
   content: string;
+  type?: 'user' | 'system';
   author: {
     _id: string;
     username: string;

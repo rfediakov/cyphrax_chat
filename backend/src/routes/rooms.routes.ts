@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as roomService from '../services/room.service.js';
+import { createSystemRoomMessage } from '../services/message.service.js';
 import { BadRequestError } from '../lib/errors.js';
 import { getIo } from '../lib/io.js';
 import { RoomMember } from '../models/roomMember.model.js';
@@ -147,6 +148,10 @@ router.post('/:id/join', requireAuth, async (req: Request, res: Response, next: 
       await io.in(`user:${userId}`).socketsJoin(`room:${id}`);
       io.to(`room:${id}`).emit('room_event', { event: 'member_joined', userId, roomId: id });
       await pushPresenceOnRoomJoin(id, userId);
+
+      // Post a system message so all members see "X joined the room" in chat
+      const systemMsg = await createSystemRoomMessage(id, userId);
+      io.to(`room:${id}`).emit('message', { message: systemMsg });
     }
   } catch (err) {
     next(err);
@@ -324,6 +329,10 @@ router.put(
           await io.in(`user:${userId}`).socketsJoin(`room:${id}`);
           io.to(`room:${id}`).emit('room_event', { event: 'member_joined', userId, roomId: id });
           await pushPresenceOnRoomJoin(id, userId);
+
+          // Post a system message so all members see "X joined the room" in chat
+          const systemMsg = await createSystemRoomMessage(id, userId);
+          io.to(`room:${id}`).emit('message', { message: systemMsg });
         }
       }
     } catch (err) {
