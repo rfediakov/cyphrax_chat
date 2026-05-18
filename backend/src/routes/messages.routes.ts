@@ -26,15 +26,18 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
 router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as { id: string };
-    const { content, replyToId, attachmentId } = req.body as {
+    const { content, replyToId, attachmentId, type, duration } = req.body as {
       content?: string;
       replyToId?: string;
       attachmentId?: string;
+      type?: 'user' | 'audio' | 'video';
+      duration?: number;
     };
-    if (!content) {
+    const msgType = type === 'audio' || type === 'video' ? type : 'user';
+    if (msgType === 'user' && !content) {
       throw new BadRequestError('content is required');
     }
-    const msg = await messageService.sendRoomMessage(id, req.user!._id, content, replyToId, attachmentId);
+    const msg = await messageService.sendRoomMessage(id, req.user!._id, content ?? ' ', replyToId, attachmentId, msgType, duration);
     res.status(201).json({ message: msg });
 
     getIo()?.to(`room:${id}`).emit('message', { message: msg });

@@ -55,6 +55,7 @@ function serializeMessage(msg: any, attachments: SerializedAttachment[] = []) {
     content: (msg as { deletedAt?: unknown; content: string }).deletedAt
       ? '[deleted]'
       : (msg as { content: string }).content,
+    duration: (msg as { duration?: number | null }).duration ?? null,
     attachments,
   };
 }
@@ -151,8 +152,10 @@ export async function sendRoomMessage(
   content: string,
   replyToId?: string,
   attachmentId?: string,
+  type: 'user' | 'audio' | 'video' = 'user',
+  duration?: number,
 ) {
-  validateContent(content);
+  if (type === 'user') validateContent(content);
 
   const roomObjectId = new Types.ObjectId(roomId);
   const userObjectId = new Types.ObjectId(userId);
@@ -168,6 +171,8 @@ export async function sendRoomMessage(
     roomId: roomObjectId,
     authorId: userObjectId,
     content,
+    type,
+    duration: duration ?? null,
     replyToId: replyToId ? new Types.ObjectId(replyToId) : null,
   });
 
@@ -400,8 +405,10 @@ export async function sendDialogMessage(
   content: string,
   replyToId?: string,
   attachmentId?: string,
+  type: 'user' | 'audio' | 'video' = 'user',
+  duration?: number,
 ): Promise<{ message: ReturnType<typeof serializeMessage>; dialogId: string }> {
-  validateContent(content);
+  if (type === 'user') validateContent(content);
 
   await requireFriends(callerId, otherUserId);
 
@@ -415,6 +422,8 @@ export async function sendDialogMessage(
     dialogId: dialog._id,
     authorId: callerObjectId,
     content,
+    type,
+    duration: duration ?? null,
     replyToId: replyToId ? new Types.ObjectId(replyToId) : null,
   });
 

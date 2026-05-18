@@ -5,7 +5,8 @@ export interface IMessage extends Document {
   dialogId: Types.ObjectId | null;
   authorId: Types.ObjectId;
   content: string;
-  type: 'user' | 'system';
+  type: 'user' | 'system' | 'audio' | 'video';
+  duration: number | null;
   replyToId: Types.ObjectId | null;
   editedAt: Date | null;
   deletedAt: Date | null;
@@ -19,7 +20,8 @@ const MessageSchema = new Schema<IMessage>(
     dialogId: { type: Schema.Types.ObjectId, ref: 'Dialog', default: null },
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     content: { type: String, required: true, maxlength: 3072 },
-    type: { type: String, enum: ['user', 'system'], default: 'user' },
+    type: { type: String, enum: ['user', 'system', 'audio', 'video'], default: 'user' },
+    duration: { type: Number, default: null },
     replyToId: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
     editedAt: { type: Date, default: null },
     deletedAt: { type: Date, default: null },

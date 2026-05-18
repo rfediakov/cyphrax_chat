@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import { Router, Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth } from '../middleware/auth.middleware.js';
-import { upload, IMAGE_MIME_TYPES, IMAGE_MAX_BYTES } from '../middleware/upload.middleware.js';
+import { upload, IMAGE_MIME_TYPES, IMAGE_MAX_BYTES, AUDIO_MAX_BYTES, AUDIO_MIME_TYPES, VIDEO_MIME_TYPES } from '../middleware/upload.middleware.js';
 import { Attachment } from '../models/attachment.model.js';
 import { RoomMember } from '../models/roomMember.model.js';
 import { Dialog } from '../models/dialog.model.js';
@@ -24,10 +24,17 @@ router.post(
 
       const file = req.file;
 
-      // Enforce image size limit (images ≤ 3 MB, others ≤ 20 MB handled by multer)
+      // Enforce per-type size limits
       if (IMAGE_MIME_TYPES.has(file.mimetype) && file.size > IMAGE_MAX_BYTES) {
         await fs.unlink(file.path).catch(() => undefined);
         res.status(413).json({ error: 'Image exceeds 3 MB limit' });
+        return;
+      }
+      const isAudio = AUDIO_MIME_TYPES.has(file.mimetype) || file.mimetype.startsWith('audio/');
+      const isVideo = VIDEO_MIME_TYPES.has(file.mimetype) || file.mimetype.startsWith('video/');
+      if ((isAudio || isVideo) && file.size > AUDIO_MAX_BYTES) {
+        await fs.unlink(file.path).catch(() => undefined);
+        res.status(413).json({ error: 'Audio/video exceeds 10 MB limit' });
         return;
       }
 

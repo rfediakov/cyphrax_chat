@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import type { Message } from '../../store/chat.store';
 import { useAuthStore } from '../../store/auth.store';
+import { AudioMessage } from './AudioMessage';
+import { VideoMessage } from './VideoMessage';
 
 export function SystemMessageItem({ message }: { message: Message }) {
   return (
@@ -140,6 +142,25 @@ export function MessageItem({ message, onReply, onEdit, onDelete, isAdmin }: Mes
         {/* Message body */}
         {message.deletedAt ? (
           <p className="text-sm text-gray-500 italic">(message deleted)</p>
+        ) : message.type === 'audio' ? (
+          message.attachments && message.attachments.length > 0 ? (
+            <AudioMessage
+              src={message.attachments[0].url}
+              duration={message.duration ?? null}
+            />
+          ) : (
+            <p className="text-sm text-gray-500 italic">(audio unavailable)</p>
+          )
+        ) : message.type === 'video' ? (
+          message.attachments && message.attachments.length > 0 ? (
+            <VideoMessage
+              src={message.attachments[0].url}
+              thumbnailSrc={message.attachments[1]?.url}
+              duration={message.duration ?? null}
+            />
+          ) : (
+            <p className="text-sm text-gray-500 italic">(video unavailable)</p>
+          )
         ) : (
           <>
             <p className="text-sm text-gray-200 whitespace-pre-wrap break-words">

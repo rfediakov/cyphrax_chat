@@ -3,6 +3,8 @@ import { io, type Socket } from 'socket.io-client';
 import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
+import { useCallsStore } from '../store/calls.store';
+import { useSOSStore, type SOSEvent } from '../store/sos.store';
 import { useToast } from '../components/ui/Toast';
 import { fetchPresenceStatuses } from '../api/presence.api';
 
@@ -58,7 +60,7 @@ function removeTypingUser(contextId: string, userId: string) {
   typingUsers[contextId] = typingUsers[contextId].filter((u) => u.userId !== userId);
 }
 
-let socketSingleton: Socket | null = null;
+export let socketSingleton: Socket | null = null;
 
 export function useSocket() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -79,6 +81,17 @@ export function useSocket() {
   const setStatus = usePresenceStore((s) => s.setStatus);
   const bulkSetStatuses = usePresenceStore((s) => s.bulkSetStatuses);
   const { showToast } = useToast();
+
+  const setIncomingCall = useCallsStore((s) => s.setIncomingCall);
+  const handleOffer = useCallsStore((s) => s.handleOffer);
+  const handleAnswer = useCallsStore((s) => s.handleAnswer);
+  const handleIce = useCallsStore((s) => s.handleIce);
+  const endCall = useCallsStore((s) => s.endCall);
+
+  const addSOSEvent = useSOSStore((s) => s.addSOSEvent);
+  const removeSOSEvent = useSOSStore((s) => s.removeSOSEvent);
+  const hydrateSOSFromServer = useSOSStore((s) => s.hydrateFromServer);
+  const currentUserId = useAuthStore((s) => s.user?._id ?? '');
 
   useEffect(() => {
     if (!accessToken) {
@@ -109,6 +122,9 @@ export function useSocket() {
     socket.on('connect', () => {
       console.log('[Socket] connected', socket.id);
       setConnected(true);
+
+      // Hydrate active SOS events on reconnect
+      void hydrateSOSFromServer();
 
       // Hydrate presence store for all known peers
       void (async () => {
@@ -240,6 +256,75 @@ export function useSocket() {
 
     socket.on('typing', ({ userId, username, contextId }: TypingPayload) => {
       addTypingUser(contextId, userId, username);
+    });
+
+    // ── WebRTC / Call events ──────────────────────────────────────────────────
+
+    socket.on(
+      'call_incoming',
+      (payload: { callId: string; callerId: string; callerUsername?: string; type: 'audio' | 'video'; roomId?: string; calleeId?: string }) => {
+        setIncomingCall({
+          callId: payload.callId,
+          callerId: payload.callerId,
+          callerUsername: payload.callerUsername ?? payload.callerId,
+          type: payload.type,
+          roomId: payload.roomId,
+          calleeId: payload.calleeId,
+        });
+        showToast(`Incoming ${payload.type} call from ${payload.callerUsername ?? 'someone'}`, 'info');
+      },
+    );
+
+    socket.on(
+      'webrtc_offer',
+      ({ callId, from, sdp }: { callId: string; from: string; sdp: RTCSessionDescriptionInit }) => {
+        void handleOffer(callId, from, sdp);
+      },
+    );
+
+    socket.on(
+      'webrtc_answer',
+      ({ sdp }: { callId: string; from: string; sdp: RTCSessionDescriptionInit }) => {
+        void handleAnswer(sdp);
+      },
+    );
+
+    socket.on(
+      'webrtc_ice',
+      ({ candidate }: { callId: string; from: string; candidate: RTCIceCandidateInit }) => {
+        void handleIce(candidate);
+      },
+    );
+
+    socket.on('call_ended', (_payload: { callId: string; endedBy: string; reason?: string }) => {
+      endCall();
+    });
+
+    socket.on('call_declined', (_payload: { callId: string; by: string }) => {
+      endCall();
+      showToast('Call declined', 'info');
+    });
+
+    // ── SOS events ────────────────────────────────────────────────────────────
+
+    socket.on('sos_alert', (sos: SOSEvent) => {
+      addSOSEvent(sos);
+
+      // Set myActiveSOSId when the server confirms our own SOS trigger
+      if (sos.userId === currentUserId) {
+        useSOSStore.setState({ myActiveSOSId: sos._id });
+      } else {
+        showToast(`🚨 SOS from ${sos.username}!`, 'error');
+      }
+    });
+
+    socket.on('sos_resolved', ({ sosId }: { sosId: string; roomId: string }) => {
+      removeSOSEvent(sosId);
+    });
+
+    socket.on('sos_error', ({ message }: { message: string }) => {
+      console.error('[SOS] error:', message);
+      showToast(`SOS error: ${message}`, 'error');
     });
 
     return () => {

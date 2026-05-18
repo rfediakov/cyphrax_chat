@@ -5,6 +5,10 @@ import { uploadAttachment } from '../../api/attachments.api';
 import { sendRoomMessage, sendDialogMessage } from '../../api/messages.api';
 import { useChatStore } from '../../store/chat.store';
 import type { Message } from '../../store/chat.store';
+import { usePTT } from '../../hooks/usePTT';
+import { PTTButton } from './PTTButton';
+import { startAudioRecording, startVideoRecording, formatDuration } from '../../lib/mediaRecorder';
+import { saveBlob, enqueue } from '../../lib/offlineQueue';
 
 const SUPPORTED_MIME_TYPES = new Set([
   // Images
@@ -47,6 +51,16 @@ export function MessageInput({
   const [pendingAttachmentName, setPendingAttachmentName] = useState<string | null>(null);
   const [unsupportedFileName, setUnsupportedFileName] = useState<string | null>(null);
 
+  // Audio/video recording state
+  type RecordingType = 'audio' | 'video' | null;
+  const [recordingType, setRecordingType] = useState<RecordingType>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [pendingMsgType, setPendingMsgType] = useState<'audio' | 'video' | null>(null);
+  const [pendingDuration, setPendingDuration] = useState<number | null>(null);
+
+  const recordingControlRef = useRef<{ stop: () => void; cancel: () => void } | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,6 +68,8 @@ export function MessageInput({
   const emojiRef = useRef<HTMLDivElement>(null);
 
   const appendMessage = useChatStore((s) => s.appendMessage);
+
+  const ptt = usePTT(socket, contextType === 'room' ? contextId : null);
 
   // Auto-resize textarea
   const adjustHeight = () => {
@@ -150,6 +166,137 @@ export function MessageInput({
       }
     },
     [handleUploadFile]
+  );
+
+  const startElapsedTimer = () => {
+    setRecordingElapsed(0);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingElapsed((s) => s + 1);
+    }, 1000);
+  };
+
+  const stopElapsedTimer = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  };
+
+  const handleStartAudio = async () => {
+    if (recordingType) return;
+    setRecordingType('audio');
+    startElapsedTimer();
+    try {
+      const ctrl = startAudioRecording(60);
+      recordingControlRef.current = ctrl;
+      const { blob, duration, mimeType } = await ctrl.result;
+      stopElapsedTimer();
+      setRecordingType(null);
+      await sendMediaBlob(blob, duration, mimeType, 'audio');
+    } catch {
+      stopElapsedTimer();
+      setRecordingType(null);
+    }
+  };
+
+  const handleStartVideo = async () => {
+    if (recordingType) return;
+    setRecordingType('video');
+    startElapsedTimer();
+    try {
+      const ctrl = startVideoRecording(30);
+      recordingControlRef.current = ctrl;
+      const { blob, thumbnail, duration, mimeType } = await ctrl.result;
+      stopElapsedTimer();
+      setRecordingType(null);
+      await sendMediaBlob(blob, duration, mimeType, 'video', thumbnail);
+    } catch {
+      stopElapsedTimer();
+      setRecordingType(null);
+    }
+  };
+
+  const handleStopRecording = () => {
+    recordingControlRef.current?.stop();
+  };
+
+  const handleCancelRecording = () => {
+    recordingControlRef.current?.cancel();
+    stopElapsedTimer();
+    setRecordingType(null);
+    setRecordingElapsed(0);
+  };
+
+  const sendMediaBlob = useCallback(
+    async (
+      blob: Blob,
+      duration: number,
+      mimeType: string,
+      msgType: 'audio' | 'video',
+      thumbnail?: Blob,
+    ) => {
+      setUploading(true);
+      setPendingMsgType(msgType);
+      setPendingDuration(duration);
+      try {
+        if (!navigator.onLine) {
+          // Offline: persist blobs to IndexedDB, enqueue send action
+          const blobKey = `draft:${crypto.randomUUID()}`;
+          await saveBlob(blobKey, blob);
+          let thumbKey: string | undefined;
+          if (thumbnail) {
+            thumbKey = `draft:${crypto.randomUUID()}`;
+            await saveBlob(thumbKey, thumbnail);
+          }
+          await enqueue({
+            type: `send_${msgType}`,
+            payload: { blobKey, thumbKey, contextId, contextType, dialogUserId, duration, mimeType },
+          });
+          return;
+        }
+
+        // Upload media blob
+        const mediaFile = new File([blob], `recording.${mimeType.split('/')[1]?.split(';')[0] ?? 'webm'}`, { type: mimeType });
+        const { data: mediaAttachment } = await uploadAttachment(mediaFile, contextId, contextType);
+
+        // Upload thumbnail for video
+        let thumbAttachmentId: string | undefined;
+        if (thumbnail) {
+          const thumbFile = new File([thumbnail], 'thumbnail.jpg', { type: 'image/jpeg' });
+          const { data: thumbData } = await uploadAttachment(thumbFile, contextId, contextType);
+          thumbAttachmentId = thumbData.id;
+        }
+
+        const payload = {
+          content: ' ',
+          attachmentId: mediaAttachment.id,
+          type: msgType,
+          duration: Math.round(duration),
+        };
+
+        const response =
+          contextType === 'room'
+            ? await sendRoomMessage(contextId, payload)
+            : await sendDialogMessage(dialogUserId ?? contextId, payload);
+
+        // If video, link thumbnail attachment to same message via a second message? No — attach it as second attachment.
+        // For now: thumbnail is shown from the second attachment slot in MessageItem.
+        // We handle it by sending a separate attachment for thumbnail — but the API only supports one attachmentId per message.
+        // Simpler approach: encode thumbnail URL into the message content or store thumbAttachmentId in the message.
+        // TODO(agent-E): video thumbnail is stored as a separate attachment but currently not linked to the message.
+        // Recipients will see a grey placeholder until a proper thumbnail API is added.
+        void thumbAttachmentId;
+
+        appendMessage(contextId, response.data.message);
+      } catch {
+        alert(`Failed to send ${msgType} message. Please try again.`);
+      } finally {
+        setUploading(false);
+        setPendingMsgType(null);
+        setPendingDuration(null);
+      }
+    },
+    [contextId, contextType, dialogUserId, appendMessage],
   );
 
   const sendMessage = useCallback(async () => {
@@ -252,6 +399,45 @@ export function MessageInput({
         </div>
       )}
 
+      {/* Recording in progress UI */}
+      {recordingType && (
+        <div className="flex items-center gap-3 mb-2 bg-gray-800 border border-red-700/60 px-3 py-1.5 rounded-lg">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+          <span className="text-xs text-red-300 font-medium">
+            {recordingType === 'audio' ? 'Recording audio' : 'Recording video'}&nbsp;·&nbsp;
+            <span className="tabular-nums">{formatDuration(recordingElapsed)}</span>
+            {recordingType === 'audio' ? ' / 1:00' : ' / 0:30'}
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={handleStopRecording}
+            className="text-xs text-white bg-blue-600 hover:bg-blue-500 px-2 py-0.5 rounded transition-colors"
+          >
+            Send
+          </button>
+          <button
+            onClick={handleCancelRecording}
+            className="text-xs text-gray-400 hover:text-white transition-colors"
+            aria-label="Cancel recording"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Pending media upload indicator */}
+      {pendingMsgType && (
+        <div className="flex items-center gap-2 mb-2 bg-gray-800 px-3 py-1.5 rounded">
+          <div className="w-4 h-4 border-2 border-gray-500 border-t-blue-400 rounded-full animate-spin shrink-0" />
+          <span className="text-xs text-gray-300">
+            Uploading {pendingMsgType}
+            {pendingDuration != null ? ` · ${formatDuration(pendingDuration)}` : ''}…
+          </span>
+        </div>
+      )}
+
       {/* Input row */}
       <div className="flex items-end gap-2">
         {/* Emoji button */}
@@ -300,6 +486,45 @@ export function MessageInput({
           onChange={handleFileChange}
           accept="*/*"
         />
+
+        {/* Audio record button */}
+        <button
+          onClick={recordingType === 'audio' ? handleStopRecording : handleStartAudio}
+          disabled={!!recordingType && recordingType !== 'audio' || uploading}
+          className={`p-2 transition-colors rounded-lg ${
+            recordingType === 'audio'
+              ? 'text-red-400 bg-red-900/30 hover:bg-red-900/50'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          } disabled:opacity-50`}
+          aria-label={recordingType === 'audio' ? 'Stop recording' : 'Record audio message'}
+          title={recordingType === 'audio' ? 'Stop & send' : 'Record audio message'}
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+        </button>
+
+        {/* Video record button */}
+        <button
+          onClick={recordingType === 'video' ? handleStopRecording : handleStartVideo}
+          disabled={!!recordingType && recordingType !== 'video' || uploading}
+          className={`p-2 transition-colors rounded-lg ${
+            recordingType === 'video'
+              ? 'text-red-400 bg-red-900/30 hover:bg-red-900/50'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+          } disabled:opacity-50`}
+          aria-label={recordingType === 'video' ? 'Stop recording' : 'Record video message'}
+          title={recordingType === 'video' ? 'Stop & send' : 'Record video message'}
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.893L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+          </svg>
+        </button>
+
+        {/* PTT button — rooms only */}
+        {contextType === 'room' && (
+          <PTTButton roomId={contextId} ptt={ptt} />
+        )}
 
         {/* Textarea */}
         <textarea

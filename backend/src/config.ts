@@ -24,4 +24,13 @@ export const config = {
   bcryptSaltRounds: 12,
   uploadDir: optionalEnv('UPLOAD_DIR', '/uploads'),
   frontendUrl: optionalEnv('FRONTEND_URL', 'http://localhost:3000'),
+  // Web Push (VAPID) — generate keys with: npx web-push generate-vapid-keys
+  vapidPublicKey: optionalEnv('VAPID_PUBLIC_KEY', ''),
+  vapidPrivateKey: optionalEnv('VAPID_PRIVATE_KEY', ''),
+  vapidContact: optionalEnv('VAPID_CONTACT', 'mailto:admin@example.com'),
+  // WebRTC TURN server (RFC 5766 §7 time-limited credentials)
+  turnHost: optionalEnv('TURN_HOST', 'localhost'),
+  turnPort: parseInt(optionalEnv('TURN_PORT', '3478'), 10),
+  turnSecret: optionalEnv('TURN_PASSWORD', 'safegroup_turn_secret'),
+  turnTtlSeconds: parseInt(optionalEnv('TURN_TTL_SECONDS', '3600'), 10),
 } as const;

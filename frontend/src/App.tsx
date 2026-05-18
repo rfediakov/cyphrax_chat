@@ -11,7 +11,35 @@ import Sessions from './pages/Sessions';
 import Profile from './pages/Profile';
 import PublicRooms from './pages/PublicRooms';
 import Contacts from './pages/Contacts';
+import Map from './pages/Map';
+import Settings from './pages/Settings';
 import { ToastProvider } from './components/ui/Toast';
+import InstallBanner from './components/pwa/InstallBanner';
+import OfflineBanner from './components/pwa/OfflineBanner';
+import BottomNav from './components/layout/BottomNav';
+import IncomingCallModal from './components/calls/IncomingCallModal';
+import ActiveCallOverlay from './components/calls/ActiveCallOverlay';
+import SOSButton from './components/sos/SOSButton';
+import SOSAlertModal from './components/sos/SOSAlertModal';
+import { useOfflineSync } from './hooks/useOfflineSync';
+// Import network store to activate the singleton watcher
+import './store/network.store';
+
+function PWAWrapper({ children }: { children: React.ReactNode }) {
+  useOfflineSync();
+  return (
+    <>
+      <InstallBanner />
+      <OfflineBanner />
+      {children}
+      {/* Call overlays are rendered at root level so they overlay the entire app */}
+      <IncomingCallModal />
+      <ActiveCallOverlay />
+      {/* SOS overlays — rendered at root level so they always appear */}
+      <SOSAlertModal />
+    </>
+  );
+}
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const { bootstrapped, setAuth, setBootstrapped } = useAuthStore();
@@ -40,7 +68,13 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!accessToken) {
     return <Navigate to="/login" replace />;
   }
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <BottomNav />
+      <SOSButton />
+    </>
+  );
 }
 
 function PublicOnly({ children }: { children: React.ReactNode }) {
@@ -55,6 +89,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
+        <PWAWrapper>
         <AuthBootstrap>
         <Routes>
           <Route
@@ -115,9 +150,26 @@ export default function App() {
               </RequireAuth>
             }
           />
+          <Route
+            path="/map"
+            element={
+              <RequireAuth>
+                <Map />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RequireAuth>
+                <Settings />
+              </RequireAuth>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </AuthBootstrap>
+        </PWAWrapper>
       </ToastProvider>
     </BrowserRouter>
   );
