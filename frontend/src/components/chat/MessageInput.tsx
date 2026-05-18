@@ -6,6 +6,23 @@ import { sendRoomMessage, sendDialogMessage } from '../../api/messages.api';
 import { useChatStore } from '../../store/chat.store';
 import type { Message } from '../../store/chat.store';
 
+const SUPPORTED_MIME_TYPES = new Set([
+  // Images
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  // Documents
+  'application/pdf',
+  'text/plain',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // Archives
+  'application/zip',
+  'application/x-zip-compressed',
+]);
+
 interface MessageInputProps {
   contextId: string;
   contextType: 'room' | 'dialog';
@@ -28,6 +45,7 @@ export function MessageInput({
   const [uploading, setUploading] = useState(false);
   const [pendingAttachmentId, setPendingAttachmentId] = useState<string | null>(null);
   const [pendingAttachmentName, setPendingAttachmentName] = useState<string | null>(null);
+  const [unsupportedFileName, setUnsupportedFileName] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -110,7 +128,16 @@ export function MessageInput({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleUploadFile(file);
+    if (file) {
+      if (!SUPPORTED_MIME_TYPES.has(file.type)) {
+        setUnsupportedFileName(file.name);
+        setPendingAttachmentId(null);
+        setPendingAttachmentName(null);
+      } else {
+        setUnsupportedFileName(null);
+        handleUploadFile(file);
+      }
+    }
     e.target.value = '';
   };
 
@@ -178,6 +205,28 @@ export function MessageInput({
             aria-label="Cancel reply"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Unsupported file type error */}
+      {unsupportedFileName && (
+        <div className="flex items-center gap-2 mb-2 bg-red-900/40 border border-red-700/60 px-3 py-1.5 rounded">
+          <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-red-300 font-medium">File type not supported</p>
+            <p className="text-xs text-red-400/80 truncate">{unsupportedFileName}</p>
+          </div>
+          <button
+            onClick={() => setUnsupportedFileName(null)}
+            className="text-red-400 hover:text-red-200 transition-colors shrink-0"
+            aria-label="Dismiss"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
