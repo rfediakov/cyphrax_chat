@@ -1,5 +1,7 @@
 import { Popup } from 'react-leaflet';
 import type { LiveLocation } from '../../store/location.store';
+import { useTelemetryStore } from '../../store/telemetry.store';
+import BatteryIndicator from '../ui/BatteryIndicator';
 
 interface UserPopupProps {
   location: LiveLocation;
@@ -16,6 +18,7 @@ function formatSecondsAgo(timestamp: number): string {
 }
 
 export default function UserPopup({ location, distanceKm, onMessageClick }: UserPopupProps) {
+  const telemetry = useTelemetryStore((s) => s.entries[location.userId]);
   const speedKmh =
     location.speed !== null ? (location.speed * 3.6).toFixed(1) : null;
   const distanceStr =
@@ -47,6 +50,15 @@ export default function UserPopup({ location, distanceKm, onMessageClick }: User
           )}
           {speedKmh !== null && <p>Speed: {speedKmh} km/h</p>}
           <p>Updated: {formatSecondsAgo(location.updatedAt)}</p>
+          {telemetry?.battery !== undefined && telemetry.battery !== null && (
+            <div className="flex items-center gap-1">
+              <BatteryIndicator
+                level={telemetry.battery.level}
+                charging={telemetry.battery.charging}
+                size="sm"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 mt-1">

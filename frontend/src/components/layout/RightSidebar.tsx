@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
+import { useTelemetryStore } from '../../store/telemetry.store';
+import BatteryIndicator from '../ui/BatteryIndicator';
 import { getRoom, getMembers, normalizeMember, sendInvitation } from '../../api/rooms.api';
 import { getContacts, normalizeContact } from '../../api/contacts.api';
 import { findDialogWithUser } from '../../lib/dialogs';
@@ -313,6 +315,7 @@ function DMUserPanel({ userId }: { userId: string }) {
   const { getStatus } = usePresence();
   const dialogs = useChatStore((s) => s.dialogs);
   const [contact, setContact] = useState<Contact | null>(null);
+  const telemetry = useTelemetryStore((s) => s.entries[userId]);
 
   const dialog = findDialogWithUser(dialogs, userId);
   const username = dialog?.otherUser?.username ?? userId;
@@ -355,6 +358,13 @@ function DMUserPanel({ userId }: { userId: string }) {
           <span className={`text-xs font-medium ${STATUS_COLOR[status]}`}>
             ● {STATUS_LABEL[status]}
           </span>
+          {telemetry?.battery != null && (
+            <BatteryIndicator
+              level={telemetry.battery.level}
+              charging={telemetry.battery.charging}
+              size="md"
+            />
+          )}
         </div>
       </div>
 
@@ -425,16 +435,27 @@ function MemberGroup({
   members: RoomMember[];
   getStatus: (id: string) => PresenceStatus;
 }) {
+  const telemetryEntries = useTelemetryStore((s) => s.entries);
   return (
     <div className="mb-3">
       <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1 px-1">{title}</p>
       <div className="space-y-0.5">
-        {members.map((m) => (
-          <div key={m._id} className="flex items-center gap-2 px-1 py-1 rounded">
-            <PresenceDot status={getStatus(m.userId._id)} />
-            <span className="text-xs text-gray-300 truncate">{m.userId.username}</span>
-          </div>
-        ))}
+        {members.map((m) => {
+          const tel = telemetryEntries[m.userId._id];
+          return (
+            <div key={m._id} className="flex items-center gap-2 px-1 py-1 rounded">
+              <PresenceDot status={getStatus(m.userId._id)} />
+              <span className="text-xs text-gray-300 truncate flex-1">{m.userId.username}</span>
+              {tel?.battery != null && (
+                <BatteryIndicator
+                  level={tel.battery.level}
+                  charging={tel.battery.charging}
+                  size="sm"
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
