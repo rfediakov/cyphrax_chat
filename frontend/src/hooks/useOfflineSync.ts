@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { flush, getQueueSize } from '../lib/offlineQueue';
+import { flush, getQueueSize, getBlob, deleteBlob } from '../lib/offlineQueue';
 import { useNetworkStore } from '../store/network.store';
 import api from '../api/axios';
 import type { QueuedAction } from '../lib/offlineQueue';
@@ -18,6 +18,47 @@ async function processAction(action: QueuedAction): Promise<void> {
       } else if (dialogId) {
         await api.post(`/dialogs/${dialogId}/messages`, { content, attachmentId });
       }
+      break;
+    }
+
+    case 'send_audio':
+    case 'send_video': {
+      const { blobKey, contextId, contextType, dialogUserId, duration, mimeType } = action.payload as {
+        blobKey: string;
+        thumbKey?: string;
+        contextId: string;
+        contextType: 'room' | 'dialog';
+        dialogUserId?: string;
+        duration: number;
+        mimeType: string;
+      };
+      const blob = await getBlob(blobKey);
+      if (!blob) break;
+
+      const ext = mimeType.split('/')[1]?.split(';')[0] ?? 'webm';
+      const mediaFile = new File([blob], `recording.${ext}`, { type: mimeType });
+      const formData = new FormData();
+      formData.append('file', mediaFile);
+      formData.append('contextId', contextId);
+      formData.append('contextType', contextType);
+      const uploadRes = await api.post<{ id: string }>('/attachments/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const msgType = action.type === 'send_audio' ? 'audio' : 'video';
+      const targetId = contextType === 'room' ? contextId : (dialogUserId ?? contextId);
+      const endpoint = contextType === 'room'
+        ? `/rooms/${targetId}/messages`
+        : `/dialogs/${targetId}/messages`;
+
+      await api.post(endpoint, {
+        content: ' ',
+        attachmentId: uploadRes.data.id,
+        type: msgType,
+        duration: Math.round(duration),
+      });
+
+      await deleteBlob(blobKey);
       break;
     }
 

@@ -42,20 +42,25 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { userId } = req.params as { userId: string };
-      const { content, replyToId, attachmentId } = req.body as {
+      const { content, replyToId, attachmentId, type, duration } = req.body as {
         content?: string;
         replyToId?: string;
         attachmentId?: string;
+        type?: 'user' | 'audio' | 'video';
+        duration?: number;
       };
-      if (!content) {
+      const msgType = type === 'audio' || type === 'video' ? type : 'user';
+      if (msgType === 'user' && !content) {
         throw new BadRequestError('content is required');
       }
       const { message, dialogId } = await messageService.sendDialogMessage(
         req.user!._id,
         userId,
-        content,
+        content ?? ' ',
         replyToId,
         attachmentId,
+        msgType,
+        duration,
       );
       res.status(201).json({ message });
 
