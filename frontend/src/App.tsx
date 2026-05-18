@@ -16,6 +16,8 @@ import { ToastProvider } from './components/ui/Toast';
 import InstallBanner from './components/pwa/InstallBanner';
 import OfflineBanner from './components/pwa/OfflineBanner';
 import BottomNav from './components/layout/BottomNav';
+import IncomingCallModal from './components/calls/IncomingCallModal';
+import ActiveCallOverlay from './components/calls/ActiveCallOverlay';
 import { useOfflineSync } from './hooks/useOfflineSync';
 // Import network store to activate the singleton watcher
 import './store/network.store';
@@ -27,6 +29,9 @@ function PWAWrapper({ children }: { children: React.ReactNode }) {
       <InstallBanner />
       <OfflineBanner />
       {children}
+      {/* Call overlays are rendered at root level so they overlay the entire app */}
+      <IncomingCallModal />
+      <ActiveCallOverlay />
     </>
   );
 }
