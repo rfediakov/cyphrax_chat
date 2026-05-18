@@ -12,6 +12,22 @@ import Profile from './pages/Profile';
 import PublicRooms from './pages/PublicRooms';
 import Contacts from './pages/Contacts';
 import { ToastProvider } from './components/ui/Toast';
+import InstallBanner from './components/pwa/InstallBanner';
+import OfflineBanner from './components/pwa/OfflineBanner';
+import { useOfflineSync } from './hooks/useOfflineSync';
+// Import network store to activate the singleton watcher
+import './store/network.store';
+
+function PWAWrapper({ children }: { children: React.ReactNode }) {
+  useOfflineSync();
+  return (
+    <>
+      <InstallBanner />
+      <OfflineBanner />
+      {children}
+    </>
+  );
+}
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const { bootstrapped, setAuth, setBootstrapped } = useAuthStore();
@@ -55,6 +71,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
+        <PWAWrapper>
         <AuthBootstrap>
         <Routes>
           <Route
@@ -118,6 +135,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </AuthBootstrap>
+        </PWAWrapper>
       </ToastProvider>
     </BrowserRouter>
   );
