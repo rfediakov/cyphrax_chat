@@ -8,6 +8,7 @@ export interface IUser extends Document {
   locationSharingActive: boolean;
   locationSharingRooms: Types.ObjectId[];
   privacyLocation: 'everyone' | 'contacts' | 'nobody';
+  privacyBattery: 'everyone' | 'contacts' | 'nobody';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +22,7 @@ const UserSchema = new Schema<IUser>(
     locationSharingActive: { type: Boolean, default: false },
     locationSharingRooms: [{ type: Schema.Types.ObjectId, ref: 'Room' }],
     privacyLocation: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'nobody' },
+    privacyBattery: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'nobody' },
   },
   { timestamps: true },
 );

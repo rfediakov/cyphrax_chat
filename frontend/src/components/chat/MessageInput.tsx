@@ -5,6 +5,8 @@ import { uploadAttachment } from '../../api/attachments.api';
 import { sendRoomMessage, sendDialogMessage } from '../../api/messages.api';
 import { useChatStore } from '../../store/chat.store';
 import type { Message } from '../../store/chat.store';
+import { usePTT } from '../../hooks/usePTT';
+import { PTTButton } from './PTTButton';
 
 const SUPPORTED_MIME_TYPES = new Set([
   // Images
@@ -54,6 +56,8 @@ export function MessageInput({
   const emojiRef = useRef<HTMLDivElement>(null);
 
   const appendMessage = useChatStore((s) => s.appendMessage);
+
+  const ptt = usePTT(socket, contextType === 'room' ? contextId : null);
 
   // Auto-resize textarea
   const adjustHeight = () => {
@@ -300,6 +304,11 @@ export function MessageInput({
           onChange={handleFileChange}
           accept="*/*"
         />
+
+        {/* PTT button — rooms only */}
+        {contextType === 'room' && (
+          <PTTButton roomId={contextId} ptt={ptt} />
+        )}
 
         {/* Textarea */}
         <textarea

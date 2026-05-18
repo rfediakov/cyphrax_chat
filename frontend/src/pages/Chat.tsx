@@ -8,6 +8,7 @@ import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useChatStore } from '../store/chat.store';
 import { useSocket } from '../hooks/useSocket';
 import { typingUsers as typingUsersMap } from '../hooks/useSocket';
+import { useTelemetry } from '../hooks/useTelemetry';
 import { useAuthStore } from '../store/auth.store';
 import type { Message } from '../store/chat.store';
 import { findDialogWithUser, getDialogRecordId } from '../lib/dialogs';
@@ -35,6 +36,7 @@ export default function Chat() {
   const currentUser = useAuthStore((s) => s.user);
 
   const { socket } = useSocket();
+  useTelemetry(activeRoomId);
 
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);

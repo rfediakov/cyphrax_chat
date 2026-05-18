@@ -19,6 +19,7 @@ import presenceRoutes from './routes/presence.routes.js';
 import pushRoutes from './routes/push.routes.js';
 import syncRoutes from './routes/sync.routes.js';
 import locationRoutes from './routes/location.routes.js';
+import telemetryRoutes from './routes/telemetry.routes.js';
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/v1/presence', presenceRoutes);
 app.use('/api/v1/push', pushRoutes);
 app.use('/api/v1/sync', syncRoutes);
 app.use('/api/v1/location', locationRoutes);
+app.use('/api/v1/telemetry', telemetryRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
