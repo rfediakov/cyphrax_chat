@@ -12,6 +12,7 @@ import Profile from './pages/Profile';
 import PublicRooms from './pages/PublicRooms';
 import Contacts from './pages/Contacts';
 import Map from './pages/Map';
+import Settings from './pages/Settings';
 import { ToastProvider } from './components/ui/Toast';
 import InstallBanner from './components/pwa/InstallBanner';
 import OfflineBanner from './components/pwa/OfflineBanner';
@@ -154,6 +155,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <Map />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RequireAuth>
+                <Settings />
               </RequireAuth>
             }
           />
