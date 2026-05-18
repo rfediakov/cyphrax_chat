@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
 import { useCallsStore } from '../store/calls.store';
+import { useSOSStore, type SOSEvent } from '../store/sos.store';
 import { useToast } from '../components/ui/Toast';
 import { fetchPresenceStatuses } from '../api/presence.api';
 
@@ -87,6 +88,11 @@ export function useSocket() {
   const handleIce = useCallsStore((s) => s.handleIce);
   const endCall = useCallsStore((s) => s.endCall);
 
+  const addSOSEvent = useSOSStore((s) => s.addSOSEvent);
+  const removeSOSEvent = useSOSStore((s) => s.removeSOSEvent);
+  const hydrateSOSFromServer = useSOSStore((s) => s.hydrateFromServer);
+  const currentUserId = useAuthStore((s) => s.user?._id ?? '');
+
   useEffect(() => {
     if (!accessToken) {
       if (socketSingleton) {
@@ -116,6 +122,9 @@ export function useSocket() {
     socket.on('connect', () => {
       console.log('[Socket] connected', socket.id);
       setConnected(true);
+
+      // Hydrate active SOS events on reconnect
+      void hydrateSOSFromServer();
 
       // Hydrate presence store for all known peers
       void (async () => {
@@ -294,6 +303,28 @@ export function useSocket() {
     socket.on('call_declined', (_payload: { callId: string; by: string }) => {
       endCall();
       showToast('Call declined', 'info');
+    });
+
+    // ── SOS events ────────────────────────────────────────────────────────────
+
+    socket.on('sos_alert', (sos: SOSEvent) => {
+      addSOSEvent(sos);
+
+      // Set myActiveSOSId when the server confirms our own SOS trigger
+      if (sos.userId === currentUserId) {
+        useSOSStore.setState({ myActiveSOSId: sos._id });
+      } else {
+        showToast(`🚨 SOS from ${sos.username}!`, 'error');
+      }
+    });
+
+    socket.on('sos_resolved', ({ sosId }: { sosId: string; roomId: string }) => {
+      removeSOSEvent(sosId);
+    });
+
+    socket.on('sos_error', ({ message }: { message: string }) => {
+      console.error('[SOS] error:', message);
+      showToast(`SOS error: ${message}`, 'error');
     });
 
     return () => {

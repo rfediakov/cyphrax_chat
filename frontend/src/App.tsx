@@ -18,6 +18,8 @@ import OfflineBanner from './components/pwa/OfflineBanner';
 import BottomNav from './components/layout/BottomNav';
 import IncomingCallModal from './components/calls/IncomingCallModal';
 import ActiveCallOverlay from './components/calls/ActiveCallOverlay';
+import SOSButton from './components/sos/SOSButton';
+import SOSAlertModal from './components/sos/SOSAlertModal';
 import { useOfflineSync } from './hooks/useOfflineSync';
 // Import network store to activate the singleton watcher
 import './store/network.store';
@@ -32,6 +34,8 @@ function PWAWrapper({ children }: { children: React.ReactNode }) {
       {/* Call overlays are rendered at root level so they overlay the entire app */}
       <IncomingCallModal />
       <ActiveCallOverlay />
+      {/* SOS overlays — rendered at root level so they always appear */}
+      <SOSAlertModal />
     </>
   );
 }
@@ -67,6 +71,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     <>
       {children}
       <BottomNav />
+      <SOSButton />
     </>
   );
 }

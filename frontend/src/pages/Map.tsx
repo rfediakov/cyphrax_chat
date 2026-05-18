@@ -5,16 +5,48 @@ import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Marker, Popup } from 'react-leaflet';
 import axios from 'axios';
 import { useLocationStore } from '../store/location.store';
 import { useChatStore } from '../store/chat.store';
+import { useSOSStore } from '../store/sos.store';
 import { useLocationSharing } from '../hooks/useLocationSharing';
 import UserMarker from '../components/map/UserMarker';
 
 // Fix default Leaflet marker icon for Vite
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
+
+function createSOSIcon(): L.DivIcon {
+  return L.divIcon({
+    className: '',
+    html: `
+      <div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
+        <div style="
+          position:absolute;
+          width:40px;height:40px;
+          border-radius:50%;
+          background:rgba(239,68,68,0.3);
+          animation:sosPulse 1.2s ease-out infinite;
+        "></div>
+        <div style="
+          position:relative;
+          width:24px;height:24px;
+          border-radius:50%;
+          background:#ef4444;
+          display:flex;align-items:center;justify-content:center;
+          font-size:9px;font-weight:bold;color:white;
+          box-shadow:0 0 0 3px rgba(239,68,68,0.5);
+          z-index:1;
+        ">SOS</div>
+      </div>`,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -20],
+  });
+}
+
+const sosIcon = createSOSIcon();
 
 interface HistoryEntry {
   _id: string;
@@ -32,6 +64,8 @@ export default function Map() {
   const setSharingActive = useLocationStore((s) => s.setSharingActive);
   const currentPosition = useLocationStore((s) => s.currentPosition);
   const userLocations = useLocationStore((s) => s.userLocations);
+  const sosEvents = useSOSStore((s) => s.activeSOSEvents);
+  const resolveSOS = useSOSStore((s) => s.resolveSOS);
 
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -186,6 +220,33 @@ export default function Map() {
                 />
               )}
             </React.Fragment>
+          ))}
+
+          {/* SOS markers */}
+          {sosEvents.map((sos) => (
+            <Marker
+              key={sos._id}
+              position={[sos.lat, sos.lng]}
+              icon={sosIcon}
+              zIndexOffset={1000}
+            >
+              <Popup>
+                <div className="text-sm p-1 min-w-[160px]">
+                  <p className="font-bold text-red-600 mb-1">🚨 SOS — {sos.username}</p>
+                  <p className="text-slate-700 italic mb-2">"{sos.message}"</p>
+                  <p className="text-slate-500 text-xs mb-2">
+                    {new Date(sos.createdAt).toLocaleTimeString()}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void resolveSOS(sos._id)}
+                    className="w-full py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
+                  >
+                    ✓ Mark as Resolved
+                  </button>
+                </div>
+              </Popup>
+            </Marker>
           ))}
         </MapContainer>
 
