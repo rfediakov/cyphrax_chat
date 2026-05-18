@@ -11,9 +11,11 @@ import Sessions from './pages/Sessions';
 import Profile from './pages/Profile';
 import PublicRooms from './pages/PublicRooms';
 import Contacts from './pages/Contacts';
+import Map from './pages/Map';
 import { ToastProvider } from './components/ui/Toast';
 import InstallBanner from './components/pwa/InstallBanner';
 import OfflineBanner from './components/pwa/OfflineBanner';
+import BottomNav from './components/layout/BottomNav';
 import { useOfflineSync } from './hooks/useOfflineSync';
 // Import network store to activate the singleton watcher
 import './store/network.store';
@@ -56,7 +58,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!accessToken) {
     return <Navigate to="/login" replace />;
   }
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <BottomNav />
+    </>
+  );
 }
 
 function PublicOnly({ children }: { children: React.ReactNode }) {
@@ -129,6 +136,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <Contacts />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/map"
+            element={
+              <RequireAuth>
+                <Map />
               </RequireAuth>
             }
           />
