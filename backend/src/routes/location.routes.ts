@@ -8,6 +8,61 @@ import { redis } from '../lib/redis.js';
 import { getIo } from '../lib/io.js';
 import { BadRequestError } from '../lib/errors.js';
 
+/**
+ * Haversine distance in metres between two lat/lng points.
+ */
+function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Check geofences for a user and emit events if entry/exit detected.
+ */
+async function checkGeofences(userId: string, lat: number, lng: number): Promise<void> {
+  const user = await User.findById(userId).select('geofences guardianIds').lean();
+  if (!user || !user.geofences?.length) return;
+
+  const io = getIo();
+  if (!io) return;
+
+  const prevKey = `geofence:prev:${userId}`;
+  const prevRaw = await redis.get(prevKey);
+  const prevInside: Record<string, boolean> = prevRaw ? (JSON.parse(prevRaw) as Record<string, boolean>) : {};
+  const nowInside: Record<string, boolean> = {};
+
+  for (const zone of user.geofences) {
+    const zoneId = (zone as typeof zone & { _id: { toString(): string } })._id.toString();
+    const dist = haversineMetres(lat, lng, zone.lat, zone.lng);
+    const inside = dist <= zone.radiusMetres;
+    nowInside[zoneId] = inside;
+
+    const wasInside = prevInside[zoneId] ?? null;
+
+    if (wasInside === true && !inside && zone.alertOnExit) {
+      const payload = { userId, zoneId, zoneName: zone.name, lat, lng };
+      io.to(`user:${userId}`).emit('geofence_exit', payload);
+      for (const gId of user.guardianIds) {
+        io.to(`user:${gId.toString()}`).emit('geofence_exit', payload);
+      }
+    }
+    if (wasInside === false && inside && zone.alertOnEntry) {
+      const payload = { userId, zoneId, zoneName: zone.name, lat, lng };
+      io.to(`user:${userId}`).emit('geofence_entry', payload);
+      for (const gId of user.guardianIds) {
+        io.to(`user:${gId.toString()}`).emit('geofence_entry', payload);
+      }
+    }
+  }
+
+  await redis.setex(prevKey, 3600, JSON.stringify(nowInside));
+}
+
 const router = Router();
 
 router.use(requireAuth);
@@ -83,6 +138,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         ]);
       }
     }
+
+    // Update last activity timestamp
+    await User.findByIdAndUpdate(userId, { lastActivityAt: new Date() });
+
+    // Check geofences asynchronously (non-blocking)
+    checkGeofences(String(userId), lat, lng).catch((e) =>
+      console.error('[Geofence check error]', e),
+    );
 
     res.json({ ok: true });
   } catch (err) {

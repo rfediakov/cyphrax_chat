@@ -4,6 +4,7 @@ const navItems = [
   { to: '/', label: 'Chat', icon: '💬' },
   { to: '/map', label: 'Map', icon: '🗺' },
   { to: '/contacts', label: 'Contacts', icon: '👥' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
   { to: '/profile', label: 'Profile', icon: '👤' },
 ] as const;
 
