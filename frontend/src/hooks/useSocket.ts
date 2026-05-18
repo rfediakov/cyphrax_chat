@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import { useAuthStore } from '../store/auth.store';
 import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
+import { useCallsStore } from '../store/calls.store';
 import { useToast } from '../components/ui/Toast';
 import { fetchPresenceStatuses } from '../api/presence.api';
 
@@ -79,6 +80,12 @@ export function useSocket() {
   const setStatus = usePresenceStore((s) => s.setStatus);
   const bulkSetStatuses = usePresenceStore((s) => s.bulkSetStatuses);
   const { showToast } = useToast();
+
+  const setIncomingCall = useCallsStore((s) => s.setIncomingCall);
+  const handleOffer = useCallsStore((s) => s.handleOffer);
+  const handleAnswer = useCallsStore((s) => s.handleAnswer);
+  const handleIce = useCallsStore((s) => s.handleIce);
+  const endCall = useCallsStore((s) => s.endCall);
 
   useEffect(() => {
     if (!accessToken) {
@@ -240,6 +247,53 @@ export function useSocket() {
 
     socket.on('typing', ({ userId, username, contextId }: TypingPayload) => {
       addTypingUser(contextId, userId, username);
+    });
+
+    // ── WebRTC / Call events ──────────────────────────────────────────────────
+
+    socket.on(
+      'call_incoming',
+      (payload: { callId: string; callerId: string; callerUsername?: string; type: 'audio' | 'video'; roomId?: string; calleeId?: string }) => {
+        setIncomingCall({
+          callId: payload.callId,
+          callerId: payload.callerId,
+          callerUsername: payload.callerUsername ?? payload.callerId,
+          type: payload.type,
+          roomId: payload.roomId,
+          calleeId: payload.calleeId,
+        });
+        showToast(`Incoming ${payload.type} call from ${payload.callerUsername ?? 'someone'}`, 'info');
+      },
+    );
+
+    socket.on(
+      'webrtc_offer',
+      ({ callId, from, sdp }: { callId: string; from: string; sdp: RTCSessionDescriptionInit }) => {
+        void handleOffer(callId, from, sdp);
+      },
+    );
+
+    socket.on(
+      'webrtc_answer',
+      ({ sdp }: { callId: string; from: string; sdp: RTCSessionDescriptionInit }) => {
+        void handleAnswer(sdp);
+      },
+    );
+
+    socket.on(
+      'webrtc_ice',
+      ({ candidate }: { callId: string; from: string; candidate: RTCIceCandidateInit }) => {
+        void handleIce(candidate);
+      },
+    );
+
+    socket.on('call_ended', (_payload: { callId: string; endedBy: string; reason?: string }) => {
+      endCall();
+    });
+
+    socket.on('call_declined', (_payload: { callId: string; by: string }) => {
+      endCall();
+      showToast('Call declined', 'info');
     });
 
     return () => {

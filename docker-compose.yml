@@ -43,6 +43,24 @@ services:
     depends_on:
       - api
 
+  coturn:
+    image: coturn/coturn:latest
+    network_mode: host
+    environment:
+      - TURN_USERNAME=${TURN_USERNAME:-safegroup}
+      - TURN_PASSWORD=${TURN_PASSWORD:-safegroup_turn_secret}
+    command: >
+      -n --log-file=stdout
+      --min-port=49152 --max-port=49200
+      --use-auth-secret
+      --static-auth-secret=${TURN_PASSWORD:-safegroup_turn_secret}
+      --realm=safegroup.local
+      --no-multicast-peers
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49152-49200:49152-49200/udp"
+
 volumes:
   mongo_data:
   uploads:
