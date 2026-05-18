@@ -5,6 +5,16 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-$HOME/da-ad-hackathon}"
 EXTERNAL_IP="${EXTERNAL_IP:-}"
 
+# e2-micro has 1GB RAM — parallel npm builds OOM without swap
+if [[ ! -f /swapfile ]]; then
+  echo "Adding 2GB swap for Docker builds..."
+  sudo fallocate -l 2G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+fi
+
 cd "$APP_DIR"
 
 if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
@@ -42,9 +52,19 @@ else
   echo "FRONTEND_URL=http://${EXTERNAL_IP}:3000" >> backend/.env
 fi
 
-echo "Building and starting mongo, redis, api, frontend (no coturn)..."
-docker compose -f docker-compose.yml -f docker-compose.gcp.yml up -d --build mongo redis api frontend
+DC="sudo docker compose -f docker-compose.yml -f docker-compose.gcp.yml"
+
+echo "Starting data services..."
+$DC up -d mongo redis
+
+echo "Building API (sequential — saves RAM on e2-micro)..."
+$DC build api
+$DC up -d api
+
+echo "Building frontend..."
+$DC build frontend
+$DC up -d frontend
 
 echo ""
 echo "Done. Open: http://${EXTERNAL_IP}:3000"
-docker compose -f docker-compose.yml -f docker-compose.gcp.yml ps
+$DC ps
