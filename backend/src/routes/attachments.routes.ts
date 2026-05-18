@@ -43,6 +43,9 @@ router.post(
       res.status(201).json({
         id: String(attachment._id),
         url: `/api/v1/attachments/${attachment._id}`,
+        filename: attachment.originalName,
+        mimetype: attachment.mimeType,
+        size: attachment.fileSize,
       });
     } catch (err) {
       // Clean up uploaded file on error
