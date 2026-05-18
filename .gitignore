@@ -9,6 +9,9 @@ build/
 .env
 .env.local
 .env.*.local
+deploy/gcp.env
+backend/.env.gcp
+backend/.env.deploy
 
 # Logs
 *.log
