@@ -27,8 +27,16 @@ function validateContent(content: string): void {
   }
 }
 
+interface SerializedAttachment {
+  _id: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+  url: string;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function serializeMessage(msg: any) {
+function serializeMessage(msg: any, attachments: SerializedAttachment[] = []) {
   const { _id, authorId, ...rest } = msg as Record<string, unknown>;
 
   // authorId may be a populated User object ({ _id, username }) or a raw ObjectId
@@ -47,7 +55,29 @@ function serializeMessage(msg: any) {
     content: (msg as { deletedAt?: unknown; content: string }).deletedAt
       ? '[deleted]'
       : (msg as { content: string }).content,
+    attachments,
   };
+}
+
+async function loadAttachmentsForMessages(
+  messageIds: Types.ObjectId[],
+): Promise<Map<string, SerializedAttachment[]>> {
+  if (messageIds.length === 0) return new Map();
+
+  const attachments = await Attachment.find({ messageId: { $in: messageIds } }).lean();
+  const map = new Map<string, SerializedAttachment[]>();
+  for (const att of attachments) {
+    const key = String(att.messageId);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push({
+      _id: String(att._id),
+      filename: att.originalName,
+      mimetype: att.mimeType ?? '',
+      size: att.fileSize ?? 0,
+      url: `/api/v1/attachments/${att._id}`,
+    });
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,8 +116,10 @@ export async function getRoomMessages(
   const nextCursor =
     messages.length === limit ? String((messages[messages.length - 1] as { _id: Types.ObjectId })._id) : null;
 
+  const attMap = await loadAttachmentsForMessages(messages.map((m) => m._id as Types.ObjectId));
+
   return {
-    data: messages.map(serializeMessage),
+    data: messages.map((m) => serializeMessage(m, attMap.get(String(m._id)) ?? [])),
     nextCursor,
   };
 }
@@ -139,13 +171,26 @@ export async function sendRoomMessage(
     replyToId: replyToId ? new Types.ObjectId(replyToId) : null,
   });
 
-  // Link pending attachment to this message
+  let attachments: SerializedAttachment[] = [];
   if (attachmentId) {
-    await Attachment.findByIdAndUpdate(attachmentId, { messageId: msg._id });
+    const att = await Attachment.findByIdAndUpdate(
+      attachmentId,
+      { messageId: msg._id },
+      { new: true },
+    ).lean();
+    if (att) {
+      attachments = [{
+        _id: String(att._id),
+        filename: att.originalName,
+        mimetype: att.mimeType ?? '',
+        size: att.fileSize ?? 0,
+        url: `/api/v1/attachments/${att._id}`,
+      }];
+    }
   }
 
   await msg.populate('authorId', '_id username');
-  return serializeMessage(msg.toObject());
+  return serializeMessage(msg.toObject(), attachments);
 }
 
 // PUT /api/v1/rooms/:id/messages/:msgId
@@ -340,8 +385,10 @@ export async function getDialogMessages(
   const nextCursor =
     messages.length === limit ? String((messages[messages.length - 1] as { _id: Types.ObjectId })._id) : null;
 
+  const attMap = await loadAttachmentsForMessages(messages.map((m) => m._id as Types.ObjectId));
+
   return {
-    data: messages.map(serializeMessage),
+    data: messages.map((m) => serializeMessage(m, attMap.get(String(m._id)) ?? [])),
     nextCursor,
   };
 }
@@ -371,12 +418,26 @@ export async function sendDialogMessage(
     replyToId: replyToId ? new Types.ObjectId(replyToId) : null,
   });
 
+  let attachments: SerializedAttachment[] = [];
   if (attachmentId) {
-    await Attachment.findByIdAndUpdate(attachmentId, { messageId: msg._id });
+    const att = await Attachment.findByIdAndUpdate(
+      attachmentId,
+      { messageId: msg._id },
+      { new: true },
+    ).lean();
+    if (att) {
+      attachments = [{
+        _id: String(att._id),
+        filename: att.originalName,
+        mimetype: att.mimeType ?? '',
+        size: att.fileSize ?? 0,
+        url: `/api/v1/attachments/${att._id}`,
+      }];
+    }
   }
 
   await msg.populate('authorId', '_id username');
-  return { message: serializeMessage(msg.toObject()), dialogId };
+  return { message: serializeMessage(msg.toObject(), attachments), dialogId };
 }
 
 // PUT /api/v1/dialogs/:userId/messages/:msgId
