@@ -13,7 +13,23 @@ const IMAGE_MIME_TYPES = new Set([
   'image/svg+xml',
 ]);
 
+export const AUDIO_MIME_TYPES = new Set([
+  'audio/webm',
+  'audio/webm;codecs=opus',
+  'audio/ogg',
+  'audio/mp4',
+  'audio/mpeg',
+]);
+
+export const VIDEO_MIME_TYPES = new Set([
+  'video/webm',
+  'video/webm;codecs=vp9',
+  'video/mp4',
+  'video/ogg',
+]);
+
 const IMAGE_MAX_BYTES = 3 * 1024 * 1024;   // 3 MB
+const AUDIO_MAX_BYTES = 10 * 1024 * 1024;  // 10 MB
 const FILE_MAX_BYTES = 20 * 1024 * 1024;   // 20 MB
 
 function contextFolder(req: Request): string {
@@ -58,4 +74,4 @@ export const upload = multer({
   limits: { fileSize: FILE_MAX_BYTES },
 });
 
-export { IMAGE_MIME_TYPES, IMAGE_MAX_BYTES, FILE_MAX_BYTES };
+export { IMAGE_MIME_TYPES, IMAGE_MAX_BYTES, AUDIO_MAX_BYTES, FILE_MAX_BYTES };

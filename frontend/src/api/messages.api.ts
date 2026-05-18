@@ -10,6 +10,8 @@ export interface SendMessagePayload {
   content: string;
   replyToId?: string;
   attachmentId?: string;
+  type?: 'user' | 'audio' | 'video';
+  duration?: number;
 }
 
 export interface EditMessagePayload {
