@@ -58,7 +58,7 @@ function removeTypingUser(contextId: string, userId: string) {
   typingUsers[contextId] = typingUsers[contextId].filter((u) => u.userId !== userId);
 }
 
-let socketSingleton: Socket | null = null;
+export let socketSingleton: Socket | null = null;
 
 export function useSocket() {
   const accessToken = useAuthStore((s) => s.accessToken);
