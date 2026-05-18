@@ -21,6 +21,7 @@ import syncRoutes from './routes/sync.routes.js';
 import locationRoutes from './routes/location.routes.js';
 import telemetryRoutes from './routes/telemetry.routes.js';
 import callsRoutes from './routes/calls.routes.js';
+import sosRoutes from './routes/sos.routes.js';
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use('/api/v1/sync', syncRoutes);
 app.use('/api/v1/location', locationRoutes);
 app.use('/api/v1/telemetry', telemetryRoutes);
 app.use('/api/v1/calls', callsRoutes);
+app.use('/api/v1/sos', sosRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

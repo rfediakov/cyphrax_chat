@@ -74,6 +74,12 @@ async function processAction(action: QueuedAction): Promise<void> {
       await api.post('/sos', action.payload);
       break;
 
+    case 'sos_resolve': {
+      const { sosId } = action.payload as { sosId: string };
+      await api.delete(`/sos/${sosId}`);
+      break;
+    }
+
     default:
       // Generic fallback: POST to /sync with the action
       await api.post('/sync', { items: [action] });
