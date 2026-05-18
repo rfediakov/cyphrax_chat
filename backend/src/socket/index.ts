@@ -18,6 +18,7 @@ import { registerActivityHandler } from './handlers/activity.handler.js';
 import { registerTypingHandler } from './handlers/typing.handler.js';
 import { registerReadHandler } from './handlers/read.handler.js';
 import { registerLocationHandler } from './handlers/location.handler.js';
+import { registerPttHandler } from './handlers/ptt.handler.js';
 
 interface JwtPayload {
   sub: string;
@@ -105,6 +106,7 @@ export function initSocket(httpServer: HttpServer): Server {
     registerTypingHandler(socket);
     registerReadHandler(socket);
     registerLocationHandler(socket, io);
+    registerPttHandler(socket, io);
 
     // Server-side presence evaluation every 30 s per connected socket
     const presenceInterval = setInterval(async () => {
