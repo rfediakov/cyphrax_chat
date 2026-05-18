@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1e40af"/>
+  <!-- Shield shape -->
+  <path d="M256 80 L384 140 L384 272 Q384 360 256 432 Q128 360 128 272 L128 140 Z" fill="#3b82f6"/>
+  <!-- Location pin inside shield -->
+  <circle cx="256" cy="220" r="40" fill="#ffffff"/>
+  <path d="M256 260 Q256 260 220 310 Q200 340 256 370 Q312 340 292 310 Z" fill="#ffffff"/>
+  <!-- Satellite signal arcs -->
+  <path d="M170 130 Q130 170 130 220" stroke="#93c5fd" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <path d="M152 112 Q98 168 98 240" stroke="#93c5fd" stroke-width="8" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <path d="M342 130 Q382 170 382 220" stroke="#93c5fd" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <path d="M360 112 Q414 168 414 240" stroke="#93c5fd" stroke-width="8" fill="none" stroke-linecap="round" opacity="0.6"/>
+</svg>
