@@ -1,0 +1,97 @@
+name: Deploy to GCP (production)
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Use GCP_SA_KEY (JSON). For WIF instead, replace this step — see docs/DEPLOY_GCP.md
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Package application
+        run: |
+          tar czf /tmp/app.tar.gz \
+            --exclude=node_modules \
+            --exclude=.git \
+            --exclude=dist \
+            --exclude=backend/.env \
+            --exclude=backend/.env.deploy \
+            --exclude=deploy/gcp.env \
+            --exclude='*.log' \
+            .
+
+      - name: Upload and deploy on VM
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_INSTANCE: ${{ secrets.GCP_INSTANCE }}
+          GCP_ZONE: ${{ secrets.GCP_ZONE }}
+          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
+        run: |
+          set -euo pipefail
+          : "${GCP_PROJECT_ID:?Set GCP_PROJECT_ID secret}"
+          : "${GCP_INSTANCE:?Set GCP_INSTANCE secret}"
+          : "${GCP_ZONE:?Set GCP_ZONE secret}"
+
+          gcloud config set project "$GCP_PROJECT_ID"
+
+          gcloud compute scp /tmp/app.tar.gz "${GCP_INSTANCE}:~/da-ad-hackathon-deploy.tar.gz" \
+            --zone="$GCP_ZONE" --project="$GCP_PROJECT_ID"
+          gcloud compute scp scripts/gcp-remote-install.sh "${GCP_INSTANCE}:~/gcp-remote-install.sh" \
+            --zone="$GCP_ZONE" --project="$GCP_PROJECT_ID"
+
+          REMOTE_PUBLIC=""
+          [[ -n "${PUBLIC_URL:-}" ]] && REMOTE_PUBLIC="PUBLIC_URL=${PUBLIC_URL}"
+
+          gcloud compute ssh "$GCP_INSTANCE" --zone="$GCP_ZONE" --project="$GCP_PROJECT_ID" --command="
+            set -e
+            mkdir -p ~/da-ad-hackathon/backend
+            ENV_BACKUP=
+            if [[ -f ~/da-ad-hackathon/backend/.env ]]; then
+              cp ~/da-ad-hackathon/backend/.env /tmp/da-ad-hackathon-backend.env.bak
+              ENV_BACKUP=1
+            fi
+            tar xzf ~/da-ad-hackathon-deploy.tar.gz -C ~/da-ad-hackathon
+            if [[ -n \"\$ENV_BACKUP\" && -f /tmp/da-ad-hackathon-backend.env.bak ]]; then
+              mv /tmp/da-ad-hackathon-backend.env.bak ~/da-ad-hackathon/backend/.env
+            fi
+            if [[ ! -f ~/da-ad-hackathon/backend/.env ]]; then
+              echo 'ERROR: ~/da-ad-hackathon/backend/.env missing. Run gcp-bootstrap-env.sh once.'
+              exit 1
+            fi
+            chmod +x ~/gcp-remote-install.sh
+            ${REMOTE_PUBLIC} APP_DIR=\$HOME/da-ad-hackathon bash ~/gcp-remote-install.sh 2>&1 | tee -a ~/deploy.log
+          "
+
+      - name: Deployment summary
+        env:
+          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
+        run: |
+          if [[ -n "${PUBLIC_URL:-}" ]]; then
+            echo "Deployed to ${PUBLIC_URL}"
+          else
+            echo "Deployed (set PUBLIC_URL secret for friendly HTTPS URL)"
+          fi
