@@ -7,7 +7,7 @@ services:
     volumes:
       - mongo_data:/data/db
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
 
   redis:
     image: redis:7-alpine
@@ -18,12 +18,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    env_file:
+      - ./backend/.env
     environment:
       NODE_ENV: production
       MONGODB_URI: mongodb://mongo:27017/chat
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: change_me_in_production
-      JWT_REFRESH_SECRET: change_me_too
       PORT: 3001
     volumes:
       - uploads:/uploads
@@ -31,7 +31,7 @@ services:
       - mongo
       - redis
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
 
   frontend:
     build:

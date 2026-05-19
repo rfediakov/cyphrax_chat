@@ -85,10 +85,19 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function VersionBadge() {
+  return (
+    <div className="fixed right-4 top-4 z-50 rounded-full bg-gray-900/80 px-3 py-1 text-xs font-medium text-gray-300 ring-1 ring-white/10 backdrop-blur">
+      Version 2.01
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
+        <VersionBadge />
         <PWAWrapper>
         <AuthBootstrap>
         <Routes>
