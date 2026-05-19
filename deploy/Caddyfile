@@ -1,0 +1,8 @@
+# Replace this hostname with your domain after DNS points to the VM static IP.
+# Then on the VM:
+#   sudo cp ~/da-ad-hackathon/deploy/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+
+app.REPLACE_WITH_YOUR_DOMAIN.example.com {
+	reverse_proxy 127.0.0.1:3000
+}

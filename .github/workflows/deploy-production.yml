@@ -1,0 +1,46 @@
+name: Deploy to GCP (production)
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to VM
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_INSTANCE: ${{ secrets.GCP_INSTANCE }}
+          GCP_ZONE: ${{ secrets.GCP_ZONE }}
+          GCP_EXTERNAL_IP: ${{ secrets.GCP_EXTERNAL_IP }}
+          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
+        run: |
+          set -euo pipefail
+          : "${GCP_PROJECT_ID:?Set GCP_PROJECT_ID secret}"
+          : "${GCP_INSTANCE:?Set GCP_INSTANCE secret}"
+          : "${GCP_ZONE:?Set GCP_ZONE secret}"
+          chmod +x scripts/gcp-*.sh
+          ./scripts/gcp-deploy.sh

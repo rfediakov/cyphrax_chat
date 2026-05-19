@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.middleware.js';
 import * as authService from '../services/auth.service.js';
 import { User } from '../models/user.model.js';
 import { BadRequestError } from '../lib/errors.js';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 function setRefreshCookie(res: Response, token: string): void {
   res.cookie(REFRESH_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: config.frontendUrl.startsWith('https://'),
     sameSite: 'strict',
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
     path: '/',
