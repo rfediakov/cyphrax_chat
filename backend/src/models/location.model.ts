@@ -9,7 +9,7 @@ export interface ILocation extends Document {
   speed: number | null;
   heading: number | null;
   altitude: number | null;
-  source: 'gps' | 'network' | 'passive';
+  source: 'gps' | 'network' | 'passive' | 'manual';
   recordedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -25,7 +25,7 @@ const LocationSchema = new Schema<ILocation>(
     speed: { type: Number, default: null },
     heading: { type: Number, default: null },
     altitude: { type: Number, default: null },
-    source: { type: String, enum: ['gps', 'network', 'passive'], default: 'gps' },
+    source: { type: String, enum: ['gps', 'network', 'passive', 'manual'], default: 'gps' },
     recordedAt: { type: Date, required: true },
   },
   { timestamps: true },

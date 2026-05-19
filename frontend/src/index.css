@@ -37,6 +37,18 @@
   text-overflow: ellipsis;
 }
 
+/* Slide-up animation for bottom-sheet modals */
+@keyframes slideUp {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 /* SOS marker pulse animation */
 @keyframes sosPulse {
   0% {

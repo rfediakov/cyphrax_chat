@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useLocationStore, type LiveLocation } from '../store/location.store';
+import { useLocationStore, coordsToOwnPosition, type LiveLocation } from '../store/location.store';
 import { useNetworkStore } from '../store/network.store';
 import { startWatching, stopWatching, distanceMetres } from '../lib/geolocation';
 import { enqueue } from '../lib/offlineQueue';
@@ -61,7 +61,7 @@ export function useLocationSharing(roomId: string | null) {
 
     const onUpdate = (pos: GeolocationPosition) => {
       const { latitude: lat, longitude: lng, accuracy, speed, heading } = pos.coords;
-      setCurrentPosition(pos.coords);
+      setCurrentPosition(coordsToOwnPosition(pos.coords, 'gps'));
 
       const now = Date.now();
       const last = lastEmitRef.current;

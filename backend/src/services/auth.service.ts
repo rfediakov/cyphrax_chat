@@ -34,6 +34,52 @@ function signAccessToken(userId: string, sessionId: string): string {
   });
 }
 
+const DEFAULT_ROOM_NAME = 'Random';
+
+/**
+ * Lookup (or lazily create) the global default "Random" room and ensure the
+ * given user is a member. Every new account is enrolled here so they always
+ * land in a populated group on first login.
+ */
+async function ensureMembershipInDefaultRoom(userId: Types.ObjectId): Promise<void> {
+  let roomId: Types.ObjectId | null = null;
+  const existing = await Room.findOne({ name: DEFAULT_ROOM_NAME }).select('_id').lean();
+  if (existing) {
+    roomId = existing._id as Types.ObjectId;
+  } else {
+    try {
+      const created = await Room.create({
+        name: DEFAULT_ROOM_NAME,
+        description: 'Default public room — say hi to everyone!',
+        visibility: 'public',
+        // The first registrant owns the room. This is fine for a public
+        // gathering space; ownership only governs delete/rename here.
+        ownerId: userId,
+      });
+      roomId = created._id as Types.ObjectId;
+    } catch {
+      // A concurrent registration may have created it first — re-fetch.
+      const reFetched = await Room.findOne({ name: DEFAULT_ROOM_NAME })
+        .select('_id')
+        .lean();
+      roomId = (reFetched?._id as Types.ObjectId | undefined) ?? null;
+    }
+  }
+
+  if (!roomId) return;
+
+  await RoomMember.updateOne(
+    { roomId, userId },
+    {
+      roomId,
+      userId,
+      role: 'member',
+      joinedAt: new Date(),
+    },
+    { upsert: true },
+  );
+}
+
 export async function register(params: {
   email: string;
   username: string;
@@ -55,6 +101,10 @@ export async function register(params: {
 
   const passwordHash = await bcrypt.hash(password, config.bcryptSaltRounds);
   const user = await User.create({ email, username, passwordHash });
+
+  // Auto-enroll new account in the public "Random" room so they always have at
+  // least one populated group to interact with — including a shared map view.
+  await ensureMembershipInDefaultRoom(user._id as Types.ObjectId);
 
   return { id: String(user._id), email: user.email, username: user.username };
 }

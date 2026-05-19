@@ -1,52 +1,15 @@
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
-import iconUrl from 'leaflet/dist/images/marker-icon.png';
-import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Circle, Marker, Popup } from 'react-leaflet';
-import axios from 'axios';
+import GroupMap from '../components/map/GroupMap';
+import { useAuthStore } from '../store/auth.store';
 import { useLocationStore } from '../store/location.store';
 import { useChatStore } from '../store/chat.store';
 import { useSOSStore } from '../store/sos.store';
 import { useLocationSharing } from '../hooks/useLocationSharing';
-import UserMarker from '../components/map/UserMarker';
-
-// Fix default Leaflet marker icon for Vite
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
-
-function createSOSIcon(): L.DivIcon {
-  return L.divIcon({
-    className: '',
-    html: `
-      <div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
-        <div style="
-          position:absolute;
-          width:40px;height:40px;
-          border-radius:50%;
-          background:rgba(239,68,68,0.3);
-          animation:sosPulse 1.2s ease-out infinite;
-        "></div>
-        <div style="
-          position:relative;
-          width:24px;height:24px;
-          border-radius:50%;
-          background:#ef4444;
-          display:flex;align-items:center;justify-content:center;
-          font-size:9px;font-weight:bold;color:white;
-          box-shadow:0 0 0 3px rgba(239,68,68,0.5);
-          z-index:1;
-        ">SOS</div>
-      </div>`,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -20],
-  });
-}
-
-const sosIcon = createSOSIcon();
+import { useRoomLiveLocations } from '../hooks/useRoomLiveLocations';
+import { useMyLocation } from '../hooks/useMyLocation';
+import { updateSharing } from '../api/location.api';
+import api from '../api/axios';
 
 interface HistoryEntry {
   _id: string;
@@ -56,6 +19,11 @@ interface HistoryEntry {
   accuracy: number;
 }
 
+/**
+ * Full-screen map page. Always tries to center on the caller's location and
+ * prompts for permission on entry. Falls back to a manual map pin when the
+ * permission is denied or geolocation isn't supported.
+ */
 export default function Map() {
   const navigate = useNavigate();
   const rooms = useChatStore((s) => s.rooms);
@@ -64,45 +32,92 @@ export default function Map() {
   const setSharingActive = useLocationStore((s) => s.setSharingActive);
   const currentPosition = useLocationStore((s) => s.currentPosition);
   const userLocations = useLocationStore((s) => s.userLocations);
+  const currentUserId = useAuthStore((s) => s.user?._id ?? null);
   const sosEvents = useSOSStore((s) => s.activeSOSEvents);
   const resolveSOS = useSOSStore((s) => s.resolveSOS);
 
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [pickerMode, setPickerMode] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Wire up the location sharing hook
-  useLocationSharing(activeRoomId);
+  // Default the room selector to "Random" (or the first room) so the caller
+  // immediately sees companions on the map without having to fiddle.
+  useEffect(() => {
+    if (activeRoomId || rooms.length === 0) return;
+    const random = rooms.find((r) => r.name === 'Random');
+    setActiveRoomId(random?._id ?? rooms[0]._id);
+  }, [rooms, activeRoomId]);
 
-  const defaultCenter: [number, number] =
-    currentPosition
-      ? [currentPosition.latitude, currentPosition.longitude]
-      : [51.505, -0.09];
+  useLocationSharing(activeRoomId);
+  useRoomLiveLocations(activeRoomId);
+
+  const {
+    permission,
+    pending,
+    error,
+    refreshPermission,
+    requestAndShareCurrent,
+    setManualPosition,
+  } = useMyLocation();
+
+  // On mount: probe permission and immediately try to acquire a fix. Browsers
+  // surface the OS permission prompt only inside this user-initiated nav, so
+  // we kick it off as soon as the route mounts.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const state = await refreshPermission();
+      if (cancelled) return;
+      if (state === 'granted' || state === 'prompt' || state === 'unknown') {
+        await requestAndShareCurrent(activeRoomId);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // intentionally only on mount — repeated calls would re-prompt the user
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Filter out our own entry — `selfPosition` renders us separately.
+  const peers = useMemo(
+    () =>
+      Object.values(userLocations).filter(
+        (l) => !currentUserId || l.userId !== currentUserId,
+      ),
+    [userLocations, currentUserId],
+  );
 
   const handleShareToggle = useCallback(async () => {
     const next = !sharingActive;
     setSharingActive(next);
     try {
-      await axios.patch(
-        '/api/v1/location/sharing',
-        {
-          active: next,
-          roomIds: activeRoomId ? [activeRoomId] : [],
-        },
-        { withCredentials: true },
-      );
+      await updateSharing({
+        active: next,
+        roomIds: activeRoomId ? [activeRoomId] : [],
+      });
     } catch (err) {
       console.warn('[Map] Failed to persist sharing state:', err);
     }
   }, [sharingActive, setSharingActive, activeRoomId]);
 
+  const handleMapClick = useCallback(
+    async (lat: number, lng: number) => {
+      if (!pickerMode) return;
+      await setManualPosition(lat, lng, activeRoomId);
+      setPickerMode(false);
+    },
+    [pickerMode, setManualPosition, activeRoomId],
+  );
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const { data } = await axios.get<{ locations: HistoryEntry[] }>(
-        '/api/v1/location/history?limit=50',
-        { withCredentials: true },
+      const { data } = await api.get<{ locations: HistoryEntry[] }>(
+        '/location/history',
+        { params: { limit: 50 } },
       );
       setHistory(data.locations);
     } catch (err) {
@@ -115,8 +130,6 @@ export default function Map() {
   useEffect(() => {
     if (showHistory) void loadHistory();
   }, [showHistory, loadHistory]);
-
-  const locationsList = Object.values(userLocations);
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-slate-900">
@@ -156,108 +169,117 @@ export default function Map() {
           }`}
         >
           <span
-            className={`w-2 h-2 rounded-full ${sharingActive ? 'bg-green-300 animate-pulse' : 'bg-slate-500'}`}
+            className={`w-2 h-2 rounded-full ${
+              sharingActive ? 'bg-green-300 animate-pulse' : 'bg-slate-500'
+            }`}
           />
           {sharingActive ? 'Sharing' : 'Share'}
         </button>
       </div>
 
+      {/* Permission / status banners */}
+      {permission === 'denied' && (
+        <div className="px-3 py-1.5 text-xs text-amber-200 bg-amber-900/40 border-b border-amber-700/40">
+          Location permission denied. Pin your position manually with{' '}
+          <span className="font-semibold">Pick on map</span> below.
+        </div>
+      )}
+      {permission === 'unsupported' && (
+        <div className="px-3 py-1.5 text-xs text-slate-300 bg-slate-800 border-b border-slate-700">
+          Geolocation isn't supported on this device. Pin manually instead.
+        </div>
+      )}
+      {error && permission !== 'denied' && (
+        <div className="px-3 py-1.5 text-xs text-red-200 bg-red-900/40 border-b border-red-700/40">
+          {error}
+        </div>
+      )}
+
       {/* Map container */}
-      <div className="flex-1 relative">
-        <MapContainer
-          center={defaultCenter}
-          zoom={13}
-          style={{ height: '100%', width: '100%' }}
-          className="z-0"
-        >
-          <TileLayer
-            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
+      <div className={`flex-1 relative ${pickerMode ? 'cursor-crosshair' : ''}`}>
+        <GroupMap
+          selfPosition={currentPosition}
+          peerLocations={peers}
+          sosEvents={sosEvents}
+          onMapClick={pickerMode ? handleMapClick : undefined}
+          onResolveSOS={(id) => void resolveSOS(id)}
+          onMessagePeer={(userId) => navigate(`/?dialog=${userId}`)}
+          followSelf={pickerMode ? 'never' : 'first-fix'}
+        />
 
-          {/* Current user — self marker */}
-          {currentPosition && (
-            <>
-              <UserMarker
-                location={{
-                  userId: 'self',
-                  username: 'You',
-                  lat: currentPosition.latitude,
-                  lng: currentPosition.longitude,
-                  accuracy: currentPosition.accuracy,
-                  speed: currentPosition.speed,
-                  heading: currentPosition.heading,
-                  updatedAt: Date.now(),
-                }}
-                isCurrentUser
-                onMessageClick={() => undefined}
-              />
-              {currentPosition.accuracy > 0 && (
-                <Circle
-                  center={[currentPosition.latitude, currentPosition.longitude]}
-                  radius={currentPosition.accuracy}
-                  pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.15, weight: 1 }}
-                />
-              )}
-            </>
-          )}
-
-          {/* Other users */}
-          {locationsList.map((loc) => (
-            <React.Fragment key={loc.userId}>
-              <UserMarker
-                location={loc}
-                isCurrentUser={false}
-                currentLat={currentPosition?.latitude}
-                currentLng={currentPosition?.longitude}
-                onMessageClick={() => navigate(`/?dialog=${loc.userId}`)}
-              />
-              {loc.accuracy > 0 && (
-                <Circle
-                  center={[loc.lat, loc.lng]}
-                  radius={loc.accuracy}
-                  pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 1 }}
-                />
-              )}
-            </React.Fragment>
-          ))}
-
-          {/* SOS markers */}
-          {sosEvents.map((sos) => (
-            <Marker
-              key={sos._id}
-              position={[sos.lat, sos.lng]}
-              icon={sosIcon}
-              zIndexOffset={1000}
+        {/* Floating controls */}
+        <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => void requestAndShareCurrent(activeRoomId)}
+            disabled={pending || permission === 'unsupported'}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 backdrop-blur text-slate-100 text-xs font-medium shadow-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
+            title="Use device location"
+          >
+            <svg
+              className="w-4 h-4 text-blue-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              <Popup>
-                <div className="text-sm p-1 min-w-[160px]">
-                  <p className="font-bold text-red-600 mb-1">🚨 SOS — {sos.username}</p>
-                  <p className="text-slate-700 italic mb-2">"{sos.message}"</p>
-                  <p className="text-slate-500 text-xs mb-2">
-                    {new Date(sos.createdAt).toLocaleTimeString()}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void resolveSOS(sos._id)}
-                    className="w-full py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
-                  >
-                    ✓ Mark as Resolved
-                  </button>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-        </MapContainer>
+              <circle cx="12" cy="12" r="3" strokeWidth={2} />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 2v3M12 19v3M2 12h3M19 12h3"
+              />
+            </svg>
+            {pending ? 'Locating…' : 'My location'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPickerMode((v) => !v)}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium shadow-lg backdrop-blur transition-colors ${
+              pickerMode
+                ? 'bg-amber-500 text-black hover:bg-amber-400'
+                : 'bg-slate-900/90 text-slate-100 hover:bg-slate-800'
+            }`}
+            title={pickerMode ? 'Tap the map to drop a pin' : 'Pick location on map'}
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 11c-1.105 0-2-.895-2-2s.895-2 2-2 2 .895 2 2-.895 2-2 2z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 22s-7-7.58-7-13a7 7 0 1114 0c0 5.42-7 13-7 13z"
+              />
+            </svg>
+            {pickerMode ? 'Tap to drop' : 'Pick on map'}
+          </button>
+        </div>
 
         {/* History button */}
         <button
           type="button"
           onClick={() => setShowHistory(true)}
-          className="absolute bottom-4 left-4 z-[1000] flex items-center gap-1.5 px-3 py-2 bg-slate-900 bg-opacity-90 text-slate-200 rounded-lg text-sm font-medium shadow-lg hover:bg-slate-800 transition-colors"
+          className="absolute bottom-4 left-4 z-[1000] flex items-center gap-1.5 px-3 py-2 bg-slate-900/90 text-slate-200 rounded-lg text-sm font-medium shadow-lg hover:bg-slate-800 transition-colors backdrop-blur"
         >
-          📍 History
+          History
         </button>
+
+        {pickerMode && (
+          <div className="absolute top-3 left-3 z-[1000] px-3 py-1.5 rounded-lg text-xs text-amber-200 bg-amber-900/70 backdrop-blur shadow-lg">
+            Tap anywhere on the map to set your location.
+          </div>
+        )}
       </div>
 
       {/* History drawer */}

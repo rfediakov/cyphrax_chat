@@ -8,6 +8,8 @@ import { getRoom, getMembers, normalizeMember, sendInvitation } from '../../api/
 import { getContacts, normalizeContact } from '../../api/contacts.api';
 import { findDialogWithUser } from '../../lib/dialogs';
 import { ManageRoomModal } from '../modals/ManageRoomModal';
+import { UserProfileModal } from '../modals/UserProfileModal';
+import UserAvatar from '../ui/UserAvatar';
 import type { Room } from '../../store/chat.store';
 import type { Contact } from '../../api/contacts.api';
 
@@ -51,6 +53,7 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
   const [inviting, setInviting] = useState(false);
   const [inviteMsg, setInviteMsg] = useState('');
   const [showManageModal, setShowManageModal] = useState(false);
+  const [profileUser, setProfileUser] = useState<{ id: string; username: string; role?: string } | null>(null);
 
   const membersRefreshToken = useChatStore((s) => s.membersRefreshToken);
   const activeRoom = activeRoomId ? rooms.find((r) => r._id === activeRoomId) : null;
@@ -144,13 +147,28 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
         ) : (
           <>
             {owners.length > 0 && (
-              <MemberGroup title="Owner" members={owners} getStatus={getStatus} />
+              <MemberGroup
+                title="Owner"
+                members={owners}
+                getStatus={getStatus}
+                onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+              />
             )}
             {admins.length > 0 && (
-              <MemberGroup title="Admins" members={admins} getStatus={getStatus} />
+              <MemberGroup
+                title="Admins"
+                members={admins}
+                getStatus={getStatus}
+                onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+              />
             )}
             {regularMembers.length > 0 && (
-              <MemberGroup title="Members" members={regularMembers} getStatus={getStatus} />
+              <MemberGroup
+                title="Members"
+                members={regularMembers}
+                getStatus={getStatus}
+                onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+              />
             )}
           </>
         )}
@@ -261,30 +279,16 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
           }}
         />
       )}
+
+      {profileUser && (
+        <UserProfileModal
+          userId={profileUser.id}
+          username={profileUser.username}
+          subtitle={profileUser.role}
+          onClose={() => setProfileUser(null)}
+        />
+      )}
     </>
-  );
-}
-
-/** Derive a deterministic hue from a string for the avatar background. */
-function avatarHue(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return Math.abs(hash) % 360;
-}
-
-function UserAvatar({ username, size = 'lg' }: { username: string; size?: 'sm' | 'lg' }) {
-  const hue = avatarHue(username);
-  const initials = username.slice(0, 2).toUpperCase();
-  const dim = size === 'lg' ? 'w-16 h-16 text-xl' : 'w-8 h-8 text-xs';
-  return (
-    <div
-      className={`${dim} rounded-full flex items-center justify-center font-bold text-white select-none shrink-0`}
-      style={{ backgroundColor: `hsl(${hue} 55% 38%)` }}
-    >
-      {initials}
-    </div>
   );
 }
 
@@ -315,6 +319,7 @@ function DMUserPanel({ userId }: { userId: string }) {
   const { getStatus } = usePresence();
   const dialogs = useChatStore((s) => s.dialogs);
   const [contact, setContact] = useState<Contact | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
   const telemetry = useTelemetryStore((s) => s.entries[userId]);
 
   const dialog = findDialogWithUser(dialogs, userId);
@@ -340,19 +345,23 @@ function DMUserPanel({ userId }: { userId: string }) {
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Direct Message</p>
       </div>
 
-      {/* Profile section */}
-      <div className="flex flex-col items-center gap-3 px-4 py-6 border-b border-gray-700 shrink-0">
-        {/* Avatar + presence ring */}
+      {/* Profile section — clickable, opens the full profile modal */}
+      <button
+        type="button"
+        onClick={() => setShowProfile(true)}
+        className="flex flex-col items-center gap-3 px-4 py-6 border-b border-gray-700 shrink-0 hover:bg-gray-800/60 focus:outline-none focus:bg-gray-800/60 transition-colors"
+        aria-label={`Open profile of ${username}`}
+      >
         <div className="relative">
           <UserAvatar username={username} size="lg" />
           <span
             className={`absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full border-2 border-gray-900 ${
               status === 'online' ? 'bg-green-400' : status === 'afk' ? 'bg-amber-400' : 'bg-gray-500'
             }`}
+            aria-hidden="true"
           />
         </div>
 
-        {/* Name + status */}
         <div className="flex flex-col items-center gap-1 w-full min-w-0">
           <span className="text-sm font-bold text-white truncate max-w-full">@{username}</span>
           <span className={`text-xs font-medium ${STATUS_COLOR[status]}`}>
@@ -365,8 +374,17 @@ function DMUserPanel({ userId }: { userId: string }) {
               size="md"
             />
           )}
+          <span className="mt-1 text-[11px] text-blue-400 font-medium">View profile →</span>
         </div>
-      </div>
+      </button>
+
+      {showProfile && (
+        <UserProfileModal
+          userId={userId}
+          username={username}
+          onClose={() => setShowProfile(false)}
+        />
+      )}
 
       {/* Info rows */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -430,10 +448,12 @@ function MemberGroup({
   title,
   members,
   getStatus,
+  onSelectMember,
 }: {
   title: string;
   members: RoomMember[];
   getStatus: (id: string) => PresenceStatus;
+  onSelectMember: (member: RoomMember) => void;
 }) {
   const telemetryEntries = useTelemetryStore((s) => s.entries);
   return (
@@ -443,7 +463,13 @@ function MemberGroup({
         {members.map((m) => {
           const tel = telemetryEntries[m.userId._id];
           return (
-            <div key={m._id} className="flex items-center gap-2 px-1 py-1 rounded">
+            <button
+              type="button"
+              key={m._id}
+              onClick={() => onSelectMember(m)}
+              className="w-full flex items-center gap-2 px-1 py-1 rounded text-left hover:bg-gray-800 focus:outline-none focus:bg-gray-800 focus:ring-1 focus:ring-blue-500 transition-colors"
+              aria-label={`Open profile of ${m.userId.username}`}
+            >
               <PresenceDot status={getStatus(m.userId._id)} />
               <span className="text-xs text-gray-300 truncate flex-1">{m.userId.username}</span>
               {tel?.battery != null && (
@@ -453,7 +479,7 @@ function MemberGroup({
                   size="sm"
                 />
               )}
-            </div>
+            </button>
           );
         })}
       </div>

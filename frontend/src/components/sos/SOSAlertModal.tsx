@@ -57,11 +57,10 @@ function SOSAlertCard({ sos, isOwnSOS, onResolve, onDismiss }: SOSAlertCardProps
     window.open(`tel:`, '_self');
   };
 
+  // "I'm going to help" is an acknowledgement, not a global resolve. Only the
+  // victim or a room admin is authorized to resolve via the server, so we
+  // dismiss locally — the SOS stays active for everyone else.
   const handleAcknowledge = () => {
-    // Optimistically dismiss locally so the helper isn't stuck if the server
-    // rejects sos_resolve (only the victim or a room admin is authorized).
-    // We still attempt to resolve — for admins/victims this clears it globally.
-    onResolve(sos._id);
     onDismiss(sos._id);
   };
 

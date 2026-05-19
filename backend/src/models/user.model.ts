@@ -96,10 +96,10 @@ const UserSchema = new Schema<IUser>(
     locationHistory: { type: Number, default: 30 },
 
     // Privacy settings
-    privacyLocation: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'nobody' },
-    privacyBattery: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'nobody' },
+    privacyLocation: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
+    privacyBattery: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
     privacyOnlineStatus: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
-    privacyLastSeen: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'contacts' },
+    privacyLastSeen: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
     privacyProfile: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
 
     // Notification preferences

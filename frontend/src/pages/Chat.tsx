@@ -3,6 +3,7 @@ import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { RightSidebar } from '../components/layout/RightSidebar';
 import { MessageList } from '../components/chat/MessageList';
 import { MessageInput } from '../components/chat/MessageInput';
+import ChatMapPanel from '../components/chat/ChatMapPanel';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useChatStore } from '../store/chat.store';
 import { useSocket } from '../hooks/useSocket';
@@ -177,6 +178,12 @@ export default function Chat() {
                   )}
                 </div>
               </div>
+
+              {/* Group map — only meaningful for rooms (dialogs are 1:1 so the
+                  full /map page is a better fit there) */}
+              {activeContext.contextType === 'room' && (
+                <ChatMapPanel roomId={activeContext.contextId} />
+              )}
 
               {/* Messages */}
               <ErrorBoundary key={activeContext.contextId}>

@@ -35,6 +35,20 @@ export function getCurrentPosition(): Promise<GeolocationPosition> {
   );
 }
 
+/**
+ * Best-effort check of the Permissions API. Returns 'granted' | 'denied' |
+ * 'prompt' | null (null = unknown / unsupported).
+ */
+export async function queryGeolocationPermission(): Promise<PermissionState | null> {
+  if (!('permissions' in navigator)) return null;
+  try {
+    const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+    return status.state;
+  } catch {
+    return null;
+  }
+}
+
 /** Haversine distance in metres between two lat/lng pairs */
 export function distanceMetres(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
