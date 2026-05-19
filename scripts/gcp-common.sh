@@ -4,8 +4,10 @@
 GCP_PROJECT_ID="${GCP_PROJECT_ID:-safegroup-prod}"
 GCP_INSTANCE="${GCP_INSTANCE:-instance-20260518-184524}"
 GCP_ZONE="${GCP_ZONE:-us-central1-f}"
-GCP_EXTERNAL_IP="${GCP_EXTERNAL_IP:-34.173.192.205}"
+GCP_EXTERNAL_IP="${GCP_EXTERNAL_IP:-34.63.158.53}"
+APP_DOMAIN="${APP_DOMAIN:-safegroup.duckdns.org}"
 PUBLIC_URL="${PUBLIC_URL:-}"
+# Default HTTPS URL when deploying: PUBLIC_URL="https://${APP_DOMAIN}" ./scripts/gcp-deploy.sh
 
 export PATH="/opt/homebrew/bin:/opt/homebrew/share/google-cloud-sdk/bin:${PATH:-}"
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1

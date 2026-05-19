@@ -9,6 +9,10 @@ source "$ROOT/scripts/gcp-common.sh"
 
 gcp_require_gcloud
 
+if [[ -z "$PUBLIC_URL" && -n "$APP_DOMAIN" ]]; then
+  PUBLIC_URL="https://${APP_DOMAIN}"
+fi
+
 TARBALL="/tmp/da-ad-hackathon-deploy.tar.gz"
 gcp_tarball "$ROOT" "$TARBALL"
 
@@ -55,7 +59,9 @@ fi
 
 if [[ -n "$PUBLIC_URL" ]]; then
   echo "Deployed. App URL: ${PUBLIC_URL%/}"
+elif [[ -n "$APP_DOMAIN" ]]; then
+  echo "Deployed. App URL: https://${APP_DOMAIN} (set PUBLIC_URL to override)"
 else
-  echo "Deployed. App URL: http://${GCP_EXTERNAL_IP}:3000"
+  echo "Deployed. App URL: http://${GCP_EXTERNAL_IP}:3000 (Caddy: https://${APP_DOMAIN:-safegroup.duckdns.org})"
 fi
 echo "Logs on VM: tail -f ~/deploy.log"

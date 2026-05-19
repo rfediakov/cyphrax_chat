@@ -5,7 +5,10 @@
 | Project | `safegroup-prod` |
 | Instance | `instance-20260518-184524` |
 | Zone | `us-central1-f` |
-| App URL | `http://34.173.192.205:3000/` |
+| Static IP | `34.63.158.53` |
+| App URL (HTTPS) | https://safegroup.duckdns.org |
+
+See [DEPLOY_HTTPS.md](DEPLOY_HTTPS.md) for TLS, DuckDNS, and Caddy setup.
 
 ## Environment files (important)
 
@@ -25,7 +28,7 @@ Routine deploys **never** upload `deploy/gcp.env`; they preserve the existing VM
 
    ```bash
    cp deploy/gcp.env.example deploy/gcp.env
-   # edit deploy/gcp.env
+   # edit deploy/gcp.env (include FRONTEND_URL=https://safegroup.duckdns.org)
    ```
 
 2. Upload secrets to the VM (creates `backend/.env` on the server):
@@ -35,24 +38,27 @@ Routine deploys **never** upload `deploy/gcp.env`; they preserve the existing VM
    ./scripts/gcp-bootstrap-env.sh
    ```
 
+3. HTTPS (once): DNS + firewall + Caddy — follow [DEPLOY_HTTPS.md](DEPLOY_HTTPS.md), then:
+
+   ```bash
+   ./scripts/gcp-setup-https.sh
+   ```
+
 ## Routine deploy
 
 From the repo root (after `gcloud auth login`):
 
 ```bash
-./scripts/gcp-deploy.sh
+PUBLIC_URL=https://safegroup.duckdns.org ./scripts/gcp-deploy.sh
 ```
 
-Optional HTTPS domain later:
-
-```bash
-PUBLIC_URL=https://app.yourdomain.com ./scripts/gcp-deploy.sh
-```
+`PUBLIC_URL` updates `FRONTEND_URL` on the VM (CORS and Socket.IO). If omitted, `APP_DOMAIN` from [scripts/gcp-common.sh](../scripts/gcp-common.sh) is used as `https://safegroup.duckdns.org`.
 
 ## VM debugging
 
 ```bash
 gcloud compute ssh instance-20260518-184524 --zone=us-central1-f --project=safegroup-prod
 tail -f ~/deploy.log
+sudo systemctl status caddy
 sudo docker compose -f ~/da-ad-hackathon/docker-compose.yml -f ~/da-ad-hackathon/docker-compose.gcp.yml ps
 ```

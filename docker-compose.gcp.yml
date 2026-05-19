@@ -16,7 +16,7 @@ services:
 
   frontend:
     ports: !override
-      - "0.0.0.0:3000:80"
+      - "127.0.0.1:3000:80"
 
   # coturn uses host networking and many UDP ports — skip on first deploy (tight e2-micro RAM)
   coturn:

@@ -1,0 +1,8 @@
+{
+	# Production LE only (avoids staging CA / rate limits during retries)
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+safegroup.duckdns.org {
+	reverse_proxy 127.0.0.1:3000
+}
