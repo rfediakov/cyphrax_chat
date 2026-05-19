@@ -39,8 +39,9 @@ Run `./scripts/sync-version.sh [new-version]` to propagate it to
   - [`scripts/sync-version.sh`](./scripts/sync-version.sh) propagates the
     version to `frontend/package.json`, `backend/package.json`, and
     `frontend/src/version.ts`.
-  - Backend `GET /version` endpoint returning `{ name, version }` for
-    operational checks.
+  - Backend `GET /api/v1/version` endpoint returning `{ name, version }`
+    for operational checks (mounted under `/api/v1` so it goes through
+    the same reverse proxy as the rest of the API).
   - This `CHANGELOG.md`.
 
 ## [2.1.0] - 2026-05-18

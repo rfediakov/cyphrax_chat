@@ -49,7 +49,9 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', message: 'Chat API running', name: PKG.name, version: PKG.version });
 });
 
-app.get('/version', (_req, res) => {
+// `/version` is exposed under /api/v1 so it goes through the same reverse-proxy
+// rule as the rest of the public API (Caddy routes /api/* to the backend).
+app.get('/api/v1/version', (_req, res) => {
   res.json({ name: PKG.name, version: PKG.version });
 });
 
