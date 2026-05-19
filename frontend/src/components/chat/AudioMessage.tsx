@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { formatDuration } from '../../lib/mediaRecorder';
+import { useAuthorizedAttachmentBlobUrl } from '../../hooks/useAuthorizedAttachmentBlobUrl';
 
 interface AudioMessageProps {
   src: string;
@@ -7,12 +8,17 @@ interface AudioMessageProps {
 }
 
 export function AudioMessage({ src, duration }: AudioMessageProps) {
+  const { blobUrl, loading: authLoading, error: authError } = useAuthorizedAttachmentBlobUrl(src);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState<number>(duration ?? 0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [buffering, setBuffering] = useState(false);
+  const [decodeError, setDecodeError] = useState(false);
+
+  useEffect(() => {
+    setDecodeError(false);
+  }, [blobUrl]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -25,9 +31,9 @@ export function AudioMessage({ src, duration }: AudioMessageProps) {
     const onDurationChange = () => {
       if (isFinite(audio.duration)) setTotalDuration(audio.duration);
     };
-    const onWaiting = () => setLoading(true);
-    const onCanPlay = () => setLoading(false);
-    const onError = () => { setLoading(false); setError(true); };
+    const onWaiting = () => setBuffering(true);
+    const onCanPlay = () => setBuffering(false);
+    const onError = () => { setBuffering(false); setDecodeError(true); };
 
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
@@ -48,7 +54,9 @@ export function AudioMessage({ src, duration }: AudioMessageProps) {
       audio.removeEventListener('canplay', onCanPlay);
       audio.removeEventListener('error', onError);
     };
-  }, []);
+  }, [blobUrl]);
+
+  const error = authError || decodeError;
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -56,7 +64,7 @@ export function AudioMessage({ src, duration }: AudioMessageProps) {
     if (playing) {
       audio.pause();
     } else {
-      audio.play().catch(() => setError(true));
+      audio.play().catch(() => setDecodeError(true));
     }
   };
 
@@ -82,18 +90,20 @@ export function AudioMessage({ src, duration }: AudioMessageProps) {
     );
   }
 
+  const busy = authLoading || buffering;
+
   return (
     <div className="flex items-center gap-2 mt-1 p-2 bg-gray-700 rounded-xl border border-gray-600 max-w-[260px]">
-      <audio ref={audioRef} src={src} preload="metadata" />
+      {blobUrl ? <audio ref={audioRef} src={blobUrl} preload="metadata" /> : null}
 
       {/* Play/pause button */}
       <button
         onClick={togglePlay}
-        disabled={loading}
+        disabled={busy || !blobUrl}
         className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 transition-colors"
         aria-label={playing ? 'Pause' : 'Play'}
       >
-        {loading ? (
+        {busy ? (
           <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
         ) : playing ? (
           <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
