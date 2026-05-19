@@ -1,9 +1,20 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction, RequestHandler } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { SOSEvent } from '../models/sosEvent.model.js';
 import { RoomMember } from '../models/roomMember.model.js';
 import { AppError } from '../lib/errors.js';
+
+// Express 4 does not forward rejected promises from async route handlers to
+// the global error middleware, so synchronous `throw` inside them silently
+// hangs the request. Wrap each handler to bridge that gap.
+function asyncHandler(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
+): RequestHandler {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
 
 const router = Router();
 
@@ -11,7 +22,7 @@ const router = Router();
  * POST /api/v1/sos
  * REST fallback for offline-queued SOS triggers (used by offline sync flush).
  */
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+router.post('/', requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!._id;
   const { roomId, lat, lng, message } = req.body as {
     roomId?: string;
@@ -56,14 +67,14 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     status: sosEvent.status,
     createdAt: sosEvent.createdAt.toISOString(),
   });
-});
+}));
 
 /**
  * GET /api/v1/sos
  * Returns all active SOS events for rooms the authenticated user belongs to.
  * Called on app load to hydrate the SOS store.
  */
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!._id;
 
   // Find all rooms where this user is a member
@@ -95,13 +106,13 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       createdAt: e.createdAt.toISOString(),
     })),
   });
-});
+}));
 
 /**
  * GET /api/v1/sos/history
  * Returns SOS history (both active and resolved) for rooms the user belongs to.
  */
-router.get('/history', requireAuth, async (req: Request, res: Response) => {
+router.get('/history', requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!._id;
   const limit = Math.min(parseInt((req.query.limit as string) ?? '50', 10), 100);
 
@@ -132,13 +143,13 @@ router.get('/history', requireAuth, async (req: Request, res: Response) => {
       resolvedAt: e.resolvedAt?.toISOString() ?? null,
     })),
   });
-});
+}));
 
 /**
  * DELETE /api/v1/sos/:id
  * REST-based resolve (for admin use or offline catch-up).
  */
-router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+router.delete('/:id', requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!._id;
   const { id } = req.params;
 
@@ -159,6 +170,6 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   await sosEvent.save();
 
   res.json({ success: true });
-});
+}));
 
 export default router;

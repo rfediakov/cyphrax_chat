@@ -21,6 +21,7 @@ import { registerLocationHandler } from './handlers/location.handler.js';
 import { registerPttHandler } from './handlers/ptt.handler.js';
 import { registerCallHandler } from './handlers/call.handler.js';
 import { registerSOSHandler } from './handlers/sos.handler.js';
+import { registerRemoteHandler } from './handlers/remote.handler.js';
 
 interface JwtPayload {
   sub: string;
@@ -111,6 +112,7 @@ export function initSocket(httpServer: HttpServer): Server {
     registerPttHandler(socket, io);
     registerCallHandler(socket, io);
     registerSOSHandler(socket, io);
+    registerRemoteHandler(socket, io);
 
     // Server-side presence evaluation every 30 s per connected socket
     const presenceInterval = setInterval(async () => {

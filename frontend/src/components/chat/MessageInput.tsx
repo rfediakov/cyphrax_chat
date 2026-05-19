@@ -120,7 +120,8 @@ export function MessageInput({
   const emitTyping = useCallback(() => {
     if (!socket) return;
     if (typingThrottleRef.current) return;
-    socket.emit('typing', { contextId, contextType });
+    const payload = contextType === 'room' ? { roomId: contextId } : { dialogId: contextId };
+    socket.emit('typing', payload);
     typingThrottleRef.current = setTimeout(() => {
       typingThrottleRef.current = null;
     }, 1000);

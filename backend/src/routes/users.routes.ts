@@ -28,6 +28,13 @@ router.get('/me', requireAuth, async (req: Request, res: Response, next: NextFun
   }
 });
 
+// Escape characters that have special meaning in a regular expression.
+// Without this, user-supplied queries (e.g. `(a+)+b`) would let callers
+// craft pathological regexes that crash or hang the Mongo query engine.
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // GET /api/v1/users/search?q= — prefix match on username, max 20 results
 router.get('/search', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -37,7 +44,7 @@ router.get('/search', requireAuth, async (req: Request, res: Response, next: Nex
     }
 
     const users = await User.find({
-      username: { $regex: `^${q}`, $options: 'i' },
+      username: { $regex: `^${escapeRegExp(q)}`, $options: 'i' },
       deletedAt: null,
       _id: { $ne: req.user!._id },
     })

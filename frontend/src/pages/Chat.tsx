@@ -75,12 +75,13 @@ export default function Chat() {
     if (!activeContext) return;
     clearUnread(activeContext.contextId);
     if (socket) {
-      socket.emit('read', {
-        contextId: activeContext.contextId,
-        contextType: activeContext.contextType,
-      });
+      const payload =
+        activeContext.contextType === 'room'
+          ? { roomId: activeContext.contextId }
+          : { dialogId: activeContext.contextId };
+      socket.emit('read', payload);
     }
-  }, [activeContext?.contextId, socket]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeContext?.contextId, activeContext?.contextType, socket]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activity tracking: mouse, keyboard, and page visibility — throttled to 10s
   useEffect(() => {

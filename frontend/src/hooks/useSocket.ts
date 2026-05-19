@@ -75,8 +75,9 @@ export function useSocket() {
   const addPendingFriendRequest = useChatStore((s) => s.addPendingFriendRequest);
   const bumpContactsRefresh = useChatStore((s) => s.bumpContactsRefresh);
   const bumpMembersRefresh = useChatStore((s) => s.bumpMembersRefresh);
-  const activeRoomId = useChatStore((s) => s.activeRoomId);
-  const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
+  // Active context is read via useChatStore.getState() inside the socket
+  // handlers so we always see the latest selection (the effect re-binds only
+  // when accessToken changes).
 
   const setStatus = usePresenceStore((s) => s.setStatus);
   const bulkSetStatuses = usePresenceStore((s) => s.bulkSetStatuses);
@@ -165,9 +166,25 @@ export function useSocket() {
 
       appendMessage(contextId, msg as unknown as Parameters<typeof appendMessage>[1]);
 
-      const isActive =
-        contextId === activeRoomId ||
-        (msg.dialogId != null && activeDialogUserId != null);
+      // Read the latest state so we don't rely on the closure values captured at
+      // socket creation time (the effect deps only include `accessToken`).
+      const { activeRoomId: liveRoomId, activeDialogUserId: liveDialogUserId, dialogs } =
+        useChatStore.getState();
+
+      let isActive = false;
+      if (msg.roomId) {
+        isActive = msg.roomId === liveRoomId;
+      } else if (msg.dialogId && liveDialogUserId) {
+        // The active dialog is identified by the *other user's* id; map it back
+        // to a dialog record id so we can compare to the incoming message.
+        const activeDialog = dialogs.find((d) => {
+          if (d.participants?.includes(liveDialogUserId)) return true;
+          const otherId = d.otherUser?._id ?? d.otherUser?.id;
+          return otherId === liveDialogUserId;
+        });
+        const activeDialogId = activeDialog?._id ?? activeDialog?.id;
+        isActive = activeDialogId === msg.dialogId;
+      }
 
       if (!isActive) {
         incrementUnread(contextId);
