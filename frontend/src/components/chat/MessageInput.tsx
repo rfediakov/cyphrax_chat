@@ -9,6 +9,26 @@ import { usePTT } from '../../hooks/usePTT';
 import { PTTButton } from './PTTButton';
 import { startAudioRecording, startVideoRecording, formatDuration } from '../../lib/mediaRecorder';
 import { saveBlob, enqueue } from '../../lib/offlineQueue';
+import { useToast } from '../ui/Toast';
+
+function describeMediaError(err: unknown, kind: 'audio' | 'video'): string {
+  const device = kind === 'audio' ? 'microphone' : 'camera';
+  if (err instanceof DOMException) {
+    switch (err.name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return `${device[0].toUpperCase() + device.slice(1)} access was blocked. Allow it in your browser settings and try again.`;
+      case 'NotFoundError':
+      case 'OverconstrainedError':
+        return `No ${device} was found on this device.`;
+      case 'NotReadableError':
+        return `Your ${device} is already in use by another app.`;
+      case 'AbortError':
+        return '';
+    }
+  }
+  return `Could not record ${kind} message. Please try again.`;
+}
 
 const SUPPORTED_MIME_TYPES = new Set([
   // Images
@@ -68,6 +88,7 @@ export function MessageInput({
   const emojiRef = useRef<HTMLDivElement>(null);
 
   const appendMessage = useChatStore((s) => s.appendMessage);
+  const { showToast } = useToast();
 
   const ptt = usePTT(socket, contextType === 'room' ? contextId : null);
 
@@ -133,13 +154,14 @@ export function MessageInput({
         const { data } = await uploadAttachment(file, contextId, contextType);
         setPendingAttachmentId(data.id);
         setPendingAttachmentName(data.filename);
-      } catch {
-        alert('File upload failed. Please try again.');
+      } catch (err) {
+        console.error('[MessageInput] File upload failed:', err);
+        showToast('File upload failed. Please try again.', 'error');
       } finally {
         setUploading(false);
       }
     },
-    [contextId, contextType]
+    [contextId, contextType, showToast]
   );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,9 +215,14 @@ export function MessageInput({
       stopElapsedTimer();
       setRecordingType(null);
       await sendMediaBlob(blob, duration, mimeType, 'audio');
-    } catch {
+    } catch (err) {
       stopElapsedTimer();
       setRecordingType(null);
+      const message = describeMediaError(err, 'audio');
+      if (message) {
+        console.error('[MessageInput] Audio recording failed:', err);
+        showToast(message, 'error');
+      }
     }
   };
 
@@ -210,9 +237,14 @@ export function MessageInput({
       stopElapsedTimer();
       setRecordingType(null);
       await sendMediaBlob(blob, duration, mimeType, 'video', thumbnail);
-    } catch {
+    } catch (err) {
       stopElapsedTimer();
       setRecordingType(null);
+      const message = describeMediaError(err, 'video');
+      if (message) {
+        console.error('[MessageInput] Video recording failed:', err);
+        showToast(message, 'error');
+      }
     }
   };
 
@@ -288,15 +320,16 @@ export function MessageInput({
         void thumbAttachmentId;
 
         appendMessage(contextId, response.data.message);
-      } catch {
-        alert(`Failed to send ${msgType} message. Please try again.`);
+      } catch (err) {
+        console.error(`[MessageInput] Failed to send ${msgType} message:`, err);
+        showToast(`Failed to send ${msgType} message. Please try again.`, 'error');
       } finally {
         setUploading(false);
         setPendingMsgType(null);
         setPendingDuration(null);
       }
     },
-    [contextId, contextType, dialogUserId, appendMessage],
+    [contextId, contextType, dialogUserId, appendMessage, showToast],
   );
 
   const sendMessage = useCallback(async () => {
