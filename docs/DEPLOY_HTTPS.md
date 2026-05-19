@@ -97,7 +97,9 @@ FRONTEND_URL=https://safegroup.duckdns.org
 
 | Symptom | Fix |
 | --- | --- |
-| Certificate / ACME failure | DNS must point to VM; ports 80/443 open; check `journalctl -u caddy` |
+| Certificate / ACME failure | DNS must point to VM; **tcp:80 and tcp:443** must be allowed in GCP (see firewall section); check `journalctl -u caddy` |
+| `too many failed authorizations` / HTTP 429 | Let's Encrypt rate limit (~1h). Wait for `retry after` in logs, then `sudo systemctl restart caddy` |
+| `macOS curl` fails but browser works | System `curl` (LibreSSL) can fail against TLS 1.3 + PQ key shares; use `./scripts/gcp-verify-https.sh` (Python/OpenSSL fallback) or a current `curl` |
 | CORS / WebSocket errors | Redeploy with `PUBLIC_URL=https://safegroup.duckdns.org`; check `FRONTEND_URL` in VM `backend/.env` |
 | Site only on `:3000` | Run `./scripts/gcp-setup-https.sh`; ensure [docker-compose.gcp.yml](../docker-compose.gcp.yml) binds `127.0.0.1:3000` |
 

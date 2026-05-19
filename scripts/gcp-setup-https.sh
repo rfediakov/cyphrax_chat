@@ -8,6 +8,25 @@ source "$ROOT/scripts/gcp-common.sh"
 
 gcp_require_gcloud
 
+echo "==> Ensuring GCP firewall for Caddy (tcp 80 + 443)..."
+gcloud --quiet compute instances add-tags "$GCP_INSTANCE" \
+  --zone="$GCP_ZONE" --project="$GCP_PROJECT_ID" \
+  --tags=http-server,https-server || true
+if ! gcloud --quiet compute firewall-rules describe safegroup-allow-http --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+  gcloud --quiet compute firewall-rules create safegroup-allow-http \
+    --project="$GCP_PROJECT_ID" --direction=INGRESS --priority=1000 \
+    --network=default --action=ALLOW --rules=tcp:80 \
+    --source-ranges=0.0.0.0/0 --target-tags=http-server \
+    --description='HTTP for Caddy ACME and redirect'
+fi
+if ! gcloud --quiet compute firewall-rules describe safegroup-allow-https --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+  gcloud --quiet compute firewall-rules create safegroup-allow-https \
+    --project="$GCP_PROJECT_ID" --direction=INGRESS --priority=1000 \
+    --network=default --action=ALLOW --rules=tcp:443 \
+    --source-ranges=0.0.0.0/0 --target-tags=https-server \
+    --description='HTTPS for Caddy'
+fi
+
 APP_DOMAIN="${APP_DOMAIN:-safegroup.duckdns.org}"
 CADDYFILE_LOCAL="$ROOT/deploy/caddy/Caddyfile"
 
