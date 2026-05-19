@@ -119,8 +119,13 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
       <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
           <h3 className="text-sm font-semibold text-white">Create Room</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close create room dialog"
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>

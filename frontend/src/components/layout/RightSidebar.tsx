@@ -122,7 +122,7 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
       <div className="p-4 border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-gray-400 text-sm">#</span>
-          <h2 className="text-sm font-bold text-white truncate">{activeRoom?.name ?? roomDetails?.name}</h2>
+          <p className="text-sm font-bold text-white truncate" aria-hidden="true">{activeRoom?.name ?? roomDetails?.name}</p>
         </div>
         {roomDetails?.description && (
           <p className="text-xs text-gray-400 leading-relaxed">{roomDetails.description}</p>

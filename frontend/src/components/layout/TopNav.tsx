@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink as RouterNavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 
 export function TopNav() {
@@ -27,7 +27,7 @@ export function TopNav() {
             <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z" />
           </svg>
         </div>
-        <span className="font-bold text-white text-sm hidden sm:block">Cyphrax</span>
+        <span className="font-bold text-white text-sm hidden sm:block">SafeGroup</span>
       </Link>
 
       {/* Nav links */}
@@ -85,11 +85,18 @@ export function TopNav() {
 
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
-    <Link
+    <RouterNavLink
       to={to}
-      className="text-xs text-gray-400 hover:text-white hover:bg-gray-800 px-2 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+      end
+      className={({ isActive }) =>
+        `text-xs px-2 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
+          isActive
+            ? 'text-white bg-gray-800'
+            : 'text-gray-400 hover:text-white hover:bg-gray-800'
+        }`
+      }
     >
       {children}
-    </Link>
+    </RouterNavLink>
   );
 }

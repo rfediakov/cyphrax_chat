@@ -1,4 +1,6 @@
 import { createServer } from 'http';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -24,6 +26,17 @@ import callsRoutes from './routes/calls.routes.js';
 import sosRoutes from './routes/sos.routes.js';
 import privacyRoutes from './routes/privacy.routes.js';
 
+const PKG = (() => {
+  try {
+    // __dirname resolves to dist/ at runtime (compiled CJS); package.json sits one level up.
+    const pkgPath = resolve(__dirname, '..', 'package.json');
+    const raw = JSON.parse(readFileSync(pkgPath, 'utf8')) as { name?: string; version?: string };
+    return { name: raw.name ?? 'safegroup-api', version: raw.version ?? '0.0.0' };
+  } catch {
+    return { name: 'safegroup-api', version: '0.0.0' };
+  }
+})();
+
 const app = express();
 
 app.set('trust proxy', 1);
@@ -33,7 +46,11 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.get('/', (_req, res) => {
-  res.json({ status: 'ok', message: 'Chat API running' });
+  res.json({ status: 'ok', message: 'Chat API running', name: PKG.name, version: PKG.version });
+});
+
+app.get('/version', (_req, res) => {
+  res.json({ name: PKG.name, version: PKG.version });
 });
 
 // API v1 routes

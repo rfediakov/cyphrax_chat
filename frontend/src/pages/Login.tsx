@@ -31,7 +31,7 @@ export default function Login() {
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-white tracking-tight">ChatApp</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">SafeGroup</h1>
           <p className="mt-2 text-gray-400 text-sm">Sign in to your account</p>
         </div>
 
@@ -56,7 +56,7 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               placeholder="you@example.com"
             />
           </div>
@@ -72,7 +72,7 @@ export default function Login() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               placeholder="••••••••"
             />
           </div>
@@ -83,13 +83,13 @@ export default function Login() {
                 type="checkbox"
                 checked={keepSignedIn}
                 onChange={(e) => setKeepSignedIn(e.target.checked)}
-                className="w-4 h-4 rounded accent-indigo-500"
+                className="w-4 h-4 rounded accent-blue-500"
               />
               <span className="text-sm text-gray-400">Keep me signed in</span>
             </label>
             <Link
               to="/forgot-password"
-              className="text-sm text-indigo-400 hover:text-indigo-300 transition"
+              className="text-sm text-blue-400 hover:text-blue-300 transition"
             >
               Forgot password?
             </Link>
@@ -98,7 +98,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition text-sm"
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition text-sm"
           >
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
@@ -106,7 +106,7 @@ export default function Login() {
 
         <p className="mt-6 text-center text-sm text-gray-500">
           Don&apos;t have an account?{' '}
-          <Link to="/register" className="text-indigo-400 hover:text-indigo-300 transition font-medium">
+          <Link to="/register" className="text-blue-400 hover:text-blue-300 transition font-medium">
             Create one
           </Link>
         </p>

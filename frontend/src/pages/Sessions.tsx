@@ -60,7 +60,7 @@ export default function Sessions() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-white pb-20 md:pb-0">
       {/* Top bar */}
       <header className="h-14 bg-gray-900 border-b border-gray-700 flex items-center px-4 gap-4">
         <Link to="/" className="flex items-center gap-2 shrink-0">
@@ -69,7 +69,7 @@ export default function Sessions() {
               <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z" />
             </svg>
           </div>
-          <span className="font-bold text-white text-sm">Cyphrax</span>
+          <span className="font-bold text-white text-sm">SafeGroup</span>
         </Link>
         <span className="text-gray-500 text-sm">/</span>
         <span className="text-sm text-gray-300">Sessions</span>

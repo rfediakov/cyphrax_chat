@@ -125,7 +125,7 @@ export default function Chat() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900 overflow-hidden">
+    <div className="flex flex-col h-[100dvh] bg-gray-900 overflow-hidden pb-16 md:pb-0">
       <TopNav />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -222,9 +222,9 @@ function WelcomeScreen() {
           <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z" />
         </svg>
       </div>
-      <h2 className="text-lg font-bold text-white mb-2">Welcome to Cyphrax</h2>
+      <h2 className="text-lg font-bold text-white mb-2">Welcome to SafeGroup</h2>
       <p className="text-sm text-gray-400 max-w-xs">
-        Select a room from the left sidebar to start chatting, or send a direct message to one of your contacts.
+        Pick a room or contact to start chatting, or create a new room from the menu.
       </p>
     </div>
   );
