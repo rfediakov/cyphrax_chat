@@ -11,6 +11,7 @@ import { useMarkerStore } from '../store/marker.store';
 import { useMapLayersStore } from '../store/mapLayers.store';
 import { useLocationSharing } from '../hooks/useLocationSharing';
 import { useRoomLiveLocations } from '../hooks/useRoomLiveLocations';
+import { useGlobalLiveLocations } from '../hooks/useGlobalLiveLocations';
 import { useRoomMarkers } from '../hooks/useRoomMarkers';
 import { useMyLocation } from '../hooks/useMyLocation';
 import { updateSharing } from '../api/location.api';
@@ -67,6 +68,7 @@ export default function Map() {
   }, [rooms, activeRoomId]);
 
   useLocationSharing(activeRoomId);
+  useGlobalLiveLocations(true);
   useRoomLiveLocations(activeRoomId);
   useRoomMarkers(activeRoomId);
 

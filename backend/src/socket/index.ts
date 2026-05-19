@@ -86,6 +86,9 @@ export function initSocket(httpServer: HttpServer): Server {
       // §5.3.1 — join personal room
       await socket.join(`user:${userId}`);
 
+      // App-wide map channel — live locations for the common map
+      await socket.join('app:map');
+
       // §5.3.2 — join all room channels the user is a member of
       const memberships = await RoomMember.find({ userId }).lean();
       for (const m of memberships) {

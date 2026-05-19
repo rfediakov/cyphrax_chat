@@ -30,6 +30,10 @@ export interface SharingPayload {
 export const getLiveLocations = (roomId: string) =>
   api.get<{ locations: LiveLocationDTO[] }>('/location/live', { params: { roomId } });
 
+/** All users currently sharing a visible location (app-wide common map). */
+export const getGlobalLiveLocations = () =>
+  api.get<{ locations: LiveLocationDTO[] }>('/location/live/global');
+
 export const postLocation = (payload: PostLocationPayload) =>
   api.post<{ ok: true }>('/location', payload);
 

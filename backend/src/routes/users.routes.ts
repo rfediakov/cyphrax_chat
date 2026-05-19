@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { User } from '../models/user.model.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
+import { getPresenceStatuses } from '../presence/presence.manager.js';
 
 const router = Router();
 
@@ -35,6 +36,39 @@ router.get('/me', requireAuth, async (req: Request, res: Response, next: NextFun
 function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+// GET /api/v1/users/directory — all other registered users + presence
+router.get('/directory', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requesterId = req.user!._id;
+
+    const users = await User.find({
+      deletedAt: null,
+      isGuest: { $ne: true },
+      _id: { $ne: requesterId },
+    })
+      .select('_id username createdAt')
+      .sort({ username: 1 })
+      .limit(500)
+      .lean();
+
+    const ids = users.map((u) => u._id.toString());
+    const statuses = ids.length > 0 ? await getPresenceStatuses(ids) : {};
+
+    const data = users.map((u) => {
+      const id = u._id.toString();
+      return {
+        id,
+        username: u.username,
+        presence: statuses[id] ?? 'offline',
+      };
+    });
+
+    res.json({ users: data });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /api/v1/users/search?q= — prefix match on username, max 20 results
 router.get('/search', requireAuth, async (req: Request, res: Response, next: NextFunction) => {

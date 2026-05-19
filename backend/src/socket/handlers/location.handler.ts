@@ -4,6 +4,7 @@ import { User } from '../../models/user.model.js';
 import { Location } from '../../models/location.model.js';
 import { RoomMember } from '../../models/roomMember.model.js';
 import { redis } from '../../lib/redis.js';
+import { buildLivePayloadForUser } from '../../services/location.service.js';
 
 interface LocationUpdateData {
   lat?: unknown;
@@ -122,6 +123,13 @@ export function registerLocationHandler(socket: Socket, io: Server): void {
           void broadcastLocationBatch(io, rid);
         }, 500);
         batchTimers.set(rid, timer);
+      }
+
+      // Fan out to everyone on the common map (privacy checked on read via REST;
+      // live updates only when sharing is active).
+      const globalPayload = await buildLivePayloadForUser(userId);
+      if (globalPayload) {
+        io.to('app:map').emit('location_batch', [globalPayload]);
       }
     } catch (err) {
       console.error('[LocationHandler] location_update error:', err);

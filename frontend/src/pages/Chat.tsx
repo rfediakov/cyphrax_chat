@@ -9,6 +9,7 @@ import { useChatStore } from '../store/chat.store';
 import { useSocket } from '../hooks/useSocket';
 import { typingUsers as typingUsersMap } from '../hooks/useSocket';
 import { useTelemetry } from '../hooks/useTelemetry';
+import { useGlobalLiveLocations } from '../hooks/useGlobalLiveLocations';
 import { useAuthStore } from '../store/auth.store';
 import type { Message } from '../store/chat.store';
 import { findDialogWithUser, getDialogRecordId } from '../lib/dialogs';
@@ -39,6 +40,7 @@ export default function Chat() {
 
   const { socket } = useSocket();
   useTelemetry(activeRoomId);
+  useGlobalLiveLocations(true);
 
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
@@ -238,7 +240,7 @@ export default function Chat() {
               )}
             </>
           ) : (
-            <WelcomeScreen />
+            <WelcomeScreen onBrowsePeople={() => setRightSidebarOpen(true)} />
           )}
         </main>
 
@@ -249,7 +251,7 @@ export default function Chat() {
   );
 }
 
-function WelcomeScreen() {
+function WelcomeScreen({ onBrowsePeople }: { onBrowsePeople?: () => void }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
       <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center mb-4">
@@ -258,9 +260,18 @@ function WelcomeScreen() {
         </svg>
       </div>
       <h2 className="text-lg font-bold text-white mb-2">Welcome to SafeGroup</h2>
-      <p className="text-sm text-gray-400 max-w-xs">
+      <p className="text-sm text-gray-400 max-w-xs mb-4">
         Pick a room or contact to start chatting, or create a new room from the menu.
       </p>
+      {onBrowsePeople && (
+        <button
+          type="button"
+          onClick={onBrowsePeople}
+          className="lg:hidden px-4 py-2 rounded-xl text-sm font-medium bg-gray-800 hover:bg-gray-700 text-cyan-300 border border-gray-700"
+        >
+          See all users
+        </button>
+      )}
     </div>
   );
 }

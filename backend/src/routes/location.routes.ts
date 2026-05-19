@@ -7,6 +7,7 @@ import { RoomMember } from '../models/roomMember.model.js';
 import { redis } from '../lib/redis.js';
 import { getIo } from '../lib/io.js';
 import { BadRequestError } from '../lib/errors.js';
+import { getGlobalLiveLocations } from '../services/location.service.js';
 
 /**
  * Haversine distance in metres between two lat/lng points.
@@ -129,12 +130,20 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       await redis.setex(persistKey, 30, '1');
     }
 
+    const io = getIo();
+    const livePoint = { userId, lat, lng, accuracy, speed, heading, updatedAt: Date.now() };
+
     // Emit to room if specified
-    if (roomId) {
-      const io = getIo();
-      if (io) {
-        io.to(`room:${roomId}`).emit('location_batch', [
-          { userId, lat, lng, accuracy, speed, heading, updatedAt: Date.now() },
+    if (roomId && io) {
+      io.to(`room:${roomId}`).emit('location_batch', [livePoint]);
+    }
+
+    // App-wide map channel
+    if (io) {
+      const user = await User.findById(userId).select('username locationSharingActive').lean();
+      if (user?.locationSharingActive) {
+        io.to('app:map').emit('location_batch', [
+          { ...livePoint, username: user.username },
         ]);
       }
     }
@@ -148,6 +157,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     );
 
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /live/global — live locations for all shareable users (app-wide map)
+router.get('/live/global', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requesterId = req.user!._id;
+    const locations = await getGlobalLiveLocations(requesterId);
+    res.json({ locations });
   } catch (err) {
     next(err);
   }

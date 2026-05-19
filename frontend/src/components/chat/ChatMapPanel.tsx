@@ -10,6 +10,7 @@ import { useMarkerStore } from '../../store/marker.store';
 import { useMapLayersStore } from '../../store/mapLayers.store';
 import { useLocationSharing } from '../../hooks/useLocationSharing';
 import { useRoomLiveLocations } from '../../hooks/useRoomLiveLocations';
+import { useGlobalLiveLocations } from '../../hooks/useGlobalLiveLocations';
 import { useRoomMarkers } from '../../hooks/useRoomMarkers';
 import { useMyLocation } from '../../hooks/useMyLocation';
 import type { MarkerKind } from '../../lib/markerKinds';
@@ -51,6 +52,7 @@ export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
   // Wire up: GPS watcher (only emits when sharingActive is true) + initial
   // hydration of peer positions from the REST endpoint.
   useLocationSharing(roomId);
+  useGlobalLiveLocations(expanded);
   useRoomLiveLocations(expanded ? roomId : null);
   useRoomMarkers(expanded ? roomId : null);
 
@@ -162,12 +164,12 @@ export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
           />
         </svg>
         <span className="flex-1 text-sm font-medium text-gray-200 truncate">
-          Group Map
+          Common Map
         </span>
         <span className="text-xs text-gray-500">
           {peerCount === 0
-            ? 'no one sharing'
-            : `${peerCount} sharing`}
+            ? 'no one on map'
+            : `${peerCount} on map`}
         </span>
         <svg
           className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${

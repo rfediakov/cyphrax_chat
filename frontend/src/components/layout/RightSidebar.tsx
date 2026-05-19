@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
@@ -14,6 +15,7 @@ import type { Room } from '../../store/chat.store';
 import type { Contact } from '../../api/contacts.api';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { getRoomBlueprint } from '../../rooms/registry';
+import { AllUsersPanel } from './AllUsersPanel';
 
 interface RoomMember {
   _id: string;
@@ -41,7 +43,9 @@ interface RightSidebarProps {
 }
 
 export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
+  const navigate = useNavigate();
   const activeRoomId = useChatStore((s) => s.activeRoomId);
+  const setActiveDialog = useChatStore((s) => s.setActiveDialog);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
   const rooms = useChatStore((s) => s.rooms);
   const currentUser = useAuthStore((s) => s.user);
@@ -120,9 +124,49 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
 
   if (!activeRoomId) {
     return (
-      <aside className="w-56 bg-gray-900 border-l border-gray-700 hidden lg:flex flex-col shrink-0 items-center justify-center">
-        <p className="text-xs text-gray-600 text-center px-4">Select a room or contact to start chatting</p>
-      </aside>
+      <>
+        {isOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+            aria-hidden="true"
+            onClick={onClose}
+          />
+        )}
+        <aside
+          className={`bg-gray-900 border-l border-gray-700 flex-col shrink-0 overflow-hidden
+            ${isOpen ? 'fixed inset-y-0 right-0 z-40 w-72 flex' : 'hidden'}
+            lg:static lg:flex lg:w-56 lg:z-auto`}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0 lg:hidden">
+            <span className="text-sm font-semibold text-white">All users</span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white"
+              aria-label="Close panel"
+            >
+              ✕
+            </button>
+          </div>
+        <div className="p-4 border-b border-gray-700 shrink-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+            People
+          </p>
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            Everyone on SafeGroup. Tap to message; open the map to see who is sharing location.
+          </p>
+        </div>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <AllUsersPanel
+            onSelectUser={(id) => {
+              setActiveDialog(id);
+              navigate('/');
+              onClose?.();
+            }}
+          />
+        </div>
+        </aside>
+      </>
     );
   }
 
@@ -188,6 +232,15 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
               <Widget roomId={activeRoomId} config={activeRoom?.config} />
             </ErrorBoundary>
           ))}
+
+        <AllUsersPanel
+          compact
+          onSelectUser={(id) => {
+            setActiveDialog(id);
+            navigate('/');
+            onClose?.();
+          }}
+        />
       </div>
 
       {/* Action buttons */}
