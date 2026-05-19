@@ -1,0 +1,46 @@
+# Local HTTPS overlay for the production-like Docker stack.
+#
+# Usage:
+#   ./scripts/dev-https-setup.sh                 # one-time cert generation
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.dev-https.yml \
+#     up --build
+#
+# Then open: https://localhost  /  https://<your-lan-ip>  /  https://safegroup.local
+#
+# This lets developers verify the *real* production bundle (built service
+# worker, real manifest, real headers) over HTTPS — the only way to exercise
+# install prompts, push, getUserMedia and geolocation from a phone on LAN
+# without deploying to staging.
+
+services:
+  # Don't bind the frontend container to a public host port — Caddy is the
+  # only public-facing service in this overlay.
+  frontend:
+    ports: !override []
+    expose:
+      - "80"
+
+  # API stays internal; the frontend nginx already proxies /api and /socket.io.
+  api:
+    ports: !override
+      - "127.0.0.1:3001:3001"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - ./frontend/certs:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
