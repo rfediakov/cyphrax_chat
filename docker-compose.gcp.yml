@@ -1,7 +1,7 @@
 # GCP VM overlay — use: docker compose -f docker-compose.yml -f docker-compose.gcp.yml up -d --build
 services:
   mongo:
-    ports: !reset []
+    ports: !override []
 
   api:
     env_file:
@@ -11,11 +11,11 @@ services:
       MONGODB_URI: mongodb://mongo:27017/chat
       REDIS_URL: redis://redis:6379
       PORT: 3001
-    ports:
+    ports: !override
       - "127.0.0.1:3001:3001"
 
   frontend:
-    ports:
+    ports: !override
       - "0.0.0.0:3000:80"
 
   # coturn uses host networking and many UDP ports — skip on first deploy (tight e2-micro RAM)

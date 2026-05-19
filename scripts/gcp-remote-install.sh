@@ -62,6 +62,9 @@ fi
 
 DC="sudo docker compose -f docker-compose.yml -f docker-compose.gcp.yml"
 
+echo "Stopping previous stack..."
+$DC down --remove-orphans 2>/dev/null || true
+
 echo "Starting data services..."
 $DC up -d mongo redis
 
