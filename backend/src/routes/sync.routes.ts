@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { AppError } from '../lib/errors.js';
-import { Message } from '../models/message.model.js';
+import { Dialog } from '../models/dialog.model.js';
 import { OfflineQueue } from '../models/offlineQueue.model.js';
+import { sendRoomMessage, sendDialogMessage } from '../services/message.service.js';
 
 interface SyncItem {
   id: string;
@@ -76,13 +78,34 @@ async function processItem(userId: string, item: SyncItem): Promise<void> {
         content: string;
       };
       if (!content) throw new AppError(400, 'content is required');
-      await Message.create({
-        authorId: userId,
-        ...(roomId ? { roomId } : { dialogId }),
-        content,
-        type: 'user',
-      });
-      break;
+
+      if (roomId) {
+        // Goes through the same membership/ban checks as the REST endpoint.
+        await sendRoomMessage(roomId, userId, content);
+        break;
+      }
+
+      if (dialogId) {
+        if (!Types.ObjectId.isValid(dialogId)) {
+          throw new AppError(400, 'invalid dialogId');
+        }
+        const dialog = await Dialog.findById(dialogId).lean();
+        if (!dialog) throw new AppError(404, 'dialog not found');
+
+        const callerObjectId = new Types.ObjectId(userId);
+        const otherParticipant = dialog.participants.find(
+          (p) => !p.equals(callerObjectId),
+        );
+        if (!otherParticipant) {
+          // The caller is not actually part of this dialog.
+          throw new AppError(403, 'not a participant of this dialog');
+        }
+        // sendDialogMessage enforces friendship + ban rules.
+        await sendDialogMessage(userId, otherParticipant.toString(), content);
+        break;
+      }
+
+      throw new AppError(400, 'roomId or dialogId is required');
     }
 
     case 'location_update':

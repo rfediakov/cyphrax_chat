@@ -81,6 +81,43 @@ async function loadAttachmentsForMessages(
   return map;
 }
 
+/**
+ * Atomically claim an unlinked attachment for the given message, but only if
+ * the caller is the original uploader. This prevents an authenticated user
+ * from hijacking another user's attachment by guessing its id (IDOR).
+ */
+async function linkAttachmentToMessage(
+  attachmentId: string,
+  uploaderObjectId: Types.ObjectId,
+  messageObjectId: Types.ObjectId,
+): Promise<SerializedAttachment[]> {
+  if (!Types.ObjectId.isValid(attachmentId)) return [];
+
+  const att = await Attachment.findOneAndUpdate(
+    {
+      _id: new Types.ObjectId(attachmentId),
+      uploaderId: uploaderObjectId,
+      messageId: null,
+    },
+    { messageId: messageObjectId },
+    { new: true },
+  ).lean();
+
+  if (!att) {
+    throw new ForbiddenError('Attachment not found or not owned by you');
+  }
+
+  return [
+    {
+      _id: String(att._id),
+      filename: att.originalName,
+      mimetype: att.mimeType ?? '',
+      size: att.fileSize ?? 0,
+      url: `/api/v1/attachments/${att._id}`,
+    },
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Room messages
 // ---------------------------------------------------------------------------
@@ -178,20 +215,7 @@ export async function sendRoomMessage(
 
   let attachments: SerializedAttachment[] = [];
   if (attachmentId) {
-    const att = await Attachment.findByIdAndUpdate(
-      attachmentId,
-      { messageId: msg._id },
-      { new: true },
-    ).lean();
-    if (att) {
-      attachments = [{
-        _id: String(att._id),
-        filename: att.originalName,
-        mimetype: att.mimeType ?? '',
-        size: att.fileSize ?? 0,
-        url: `/api/v1/attachments/${att._id}`,
-      }];
-    }
+    attachments = await linkAttachmentToMessage(attachmentId, userObjectId, msg._id as Types.ObjectId);
   }
 
   await msg.populate('authorId', '_id username');
@@ -348,6 +372,7 @@ export async function getDialogs(userId: string) {
     dialogs.map(async (d) => {
       const lastMessage = await Message.findOne({ dialogId: d._id })
         .sort({ _id: -1 })
+        .populate<{ authorId: { _id: Types.ObjectId; username: string } }>('authorId', '_id username')
         .lean();
 
       const other = d.participants.find((p) => p._id.toString() !== userId);
@@ -429,20 +454,11 @@ export async function sendDialogMessage(
 
   let attachments: SerializedAttachment[] = [];
   if (attachmentId) {
-    const att = await Attachment.findByIdAndUpdate(
+    attachments = await linkAttachmentToMessage(
       attachmentId,
-      { messageId: msg._id },
-      { new: true },
-    ).lean();
-    if (att) {
-      attachments = [{
-        _id: String(att._id),
-        filename: att.originalName,
-        mimetype: att.mimeType ?? '',
-        size: att.fileSize ?? 0,
-        url: `/api/v1/attachments/${att._id}`,
-      }];
-    }
+      callerObjectId,
+      msg._id as Types.ObjectId,
+    );
   }
 
   await msg.populate('authorId', '_id username');

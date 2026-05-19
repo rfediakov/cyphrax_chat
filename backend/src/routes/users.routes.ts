@@ -48,14 +48,15 @@ router.get('/search', requireAuth, async (req: Request, res: Response, next: Nex
       deletedAt: null,
       _id: { $ne: req.user!._id },
     })
-      .select('username email createdAt')
+      .select('username createdAt')
       .limit(20)
       .lean();
 
+    // Intentionally never expose `email` here — that turns search into a
+    // free email enumeration endpoint.
     const data = users.map((u) => ({
       id: String(u._id),
       username: u.username,
-      email: u.email,
     }));
 
     res.json({ data });

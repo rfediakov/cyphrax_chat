@@ -91,8 +91,17 @@ export function registerLocationHandler(socket: Socket, io: Server): void {
         await redis.setex(persistKey, 30, '1');
       }
 
-      // Debounce batch broadcast per room (500ms)
+      // Debounce batch broadcast per room (500ms) — only if the user is
+      // actually a member, otherwise anyone could spray locations into any
+      // room they know the id of.
       if (roomId) {
+        if (!Types.ObjectId.isValid(roomId)) return;
+        const member = await RoomMember.findOne({
+          roomId: new Types.ObjectId(roomId),
+          userId: new Types.ObjectId(userId),
+        }).lean();
+        if (!member) return;
+
         const existing = batchTimers.get(roomId);
         if (existing) clearTimeout(existing);
         const timer = setTimeout(() => {

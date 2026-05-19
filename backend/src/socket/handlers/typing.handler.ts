@@ -1,5 +1,8 @@
 import { Socket } from 'socket.io';
+import { Types } from 'mongoose';
 import { User } from '../../models/user.model.js';
+import { RoomMember } from '../../models/roomMember.model.js';
+import { Dialog } from '../../models/dialog.model.js';
 
 interface TypingPayload {
   roomId?: string;
@@ -29,6 +32,34 @@ async function resolveUsername(userId: string): Promise<string> {
  * The payload sent to clients (`{ userId, username, contextId }`) matches the
  * field names the React typing tracker expects.
  */
+async function callerMayBroadcast(
+  userId: string,
+  roomId?: string,
+  dialogId?: string,
+): Promise<boolean> {
+  const userObjectId = new Types.ObjectId(userId);
+
+  if (roomId) {
+    if (!Types.ObjectId.isValid(roomId)) return false;
+    const member = await RoomMember.findOne({
+      roomId: new Types.ObjectId(roomId),
+      userId: userObjectId,
+    }).lean();
+    return !!member;
+  }
+
+  if (dialogId) {
+    if (!Types.ObjectId.isValid(dialogId)) return false;
+    const dialog = await Dialog.findOne({
+      _id: new Types.ObjectId(dialogId),
+      participants: userObjectId,
+    }).lean();
+    return !!dialog;
+  }
+
+  return false;
+}
+
 export function registerTypingHandler(socket: Socket): void {
   socket.on('typing', async (payload: TypingPayload) => {
     const userId = socket.data.userId as string;
@@ -47,6 +78,7 @@ export function registerTypingHandler(socket: Socket): void {
     if (!target || !contextId) return;
 
     try {
+      if (!(await callerMayBroadcast(userId, roomId, dialogId))) return;
       const username = await resolveUsername(userId);
       socket.to(target).emit('typing', { userId, username, contextId });
     } catch (err) {

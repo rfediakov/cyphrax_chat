@@ -337,6 +337,15 @@ export function MessageInput({
     const content = text.trim();
     if (!content && !pendingAttachmentId) return;
 
+    // Snapshot draft state so we can fully restore it on failure (text, the
+    // attached file, and any reply context).
+    const snapshot = {
+      text: content,
+      attachmentId: pendingAttachmentId,
+      attachmentName: pendingAttachmentName,
+      replyTo,
+    };
+
     const payload = {
       content: content || ' ',
       replyToId: replyTo?._id,
@@ -356,10 +365,14 @@ export function MessageInput({
       // Show the sent message immediately; socket broadcast is deduped in the store by _id.
       appendMessage(contextId, response.data.message);
     } catch {
-      // Restore text if send failed
-      setText(content);
+      // Restore the entire draft, not just the text — otherwise the user
+      // silently loses their attached file and reply context.
+      setText(snapshot.text);
+      if (snapshot.attachmentId) setPendingAttachmentId(snapshot.attachmentId);
+      if (snapshot.attachmentName) setPendingAttachmentName(snapshot.attachmentName);
+      showToast('Failed to send message. Please try again.', 'error');
     }
-  }, [text, pendingAttachmentId, replyTo, contextId, contextType, dialogUserId, onClearReply, appendMessage]);
+  }, [text, pendingAttachmentId, pendingAttachmentName, replyTo, contextId, contextType, dialogUserId, onClearReply, appendMessage, showToast]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

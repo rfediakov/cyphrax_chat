@@ -10,6 +10,31 @@ const MAX_MESH_PARTICIPANTS = 8;
 /** Active call map: callId → Set of socketIds currently in it */
 const activeCalls = new Map<string, Set<string>>();
 
+/**
+ * Verify the user is allowed to participate in this call:
+ *   – 1-1 call: caller or invited callee
+ *   – group call: any current room member
+ * Returns false if the call doesn't exist or the user isn't allowed.
+ */
+async function userMayParticipateInCall(callId: string, userId: string): Promise<boolean> {
+  const call = await Call.findOne({ callId }).lean();
+  if (!call) return false;
+
+  if (call.calleeId) {
+    return call.callerId.toString() === userId || call.calleeId.toString() === userId;
+  }
+
+  if (call.roomId) {
+    const member = await RoomMember.findOne({
+      roomId: call.roomId,
+      userId,
+    }).lean();
+    return !!member;
+  }
+
+  return false;
+}
+
 async function resolveTargetRoom(
   callerId: string,
   calleeId?: string,
@@ -131,6 +156,9 @@ export function registerCallHandler(socket: Socket, io: Server): void {
       const call = await Call.findOne({ callId }).lean();
       if (!call) return;
 
+      // Only an actual participant may terminate the call.
+      if (!(await userMayParticipateInCall(callId, userId))) return;
+
       const now = new Date();
       const duration = call.startedAt ? Math.floor((now.getTime() - call.startedAt.getTime()) / 1000) : 0;
 
@@ -158,7 +186,17 @@ export function registerCallHandler(socket: Socket, io: Server): void {
   // ── webrtc_offer: relay SDP offer to callee ───────────────────────────────
   socket.on(
     'webrtc_offer',
-    ({ callId, targetUserId, sdp }: { callId: string; targetUserId: string; sdp: RTCSessionDescriptionInit }) => {
+    async ({
+      callId,
+      targetUserId,
+      sdp,
+    }: {
+      callId: string;
+      targetUserId: string;
+      sdp: RTCSessionDescriptionInit;
+    }) => {
+      if (!(await userMayParticipateInCall(callId, userId))) return;
+      if (!(await userMayParticipateInCall(callId, targetUserId))) return;
       io.to(`user:${targetUserId}`).emit('webrtc_offer', { callId, from: userId, sdp });
     },
   );
@@ -166,7 +204,17 @@ export function registerCallHandler(socket: Socket, io: Server): void {
   // ── webrtc_answer: relay SDP answer back to caller ────────────────────────
   socket.on(
     'webrtc_answer',
-    ({ callId, targetUserId, sdp }: { callId: string; targetUserId: string; sdp: RTCSessionDescriptionInit }) => {
+    async ({
+      callId,
+      targetUserId,
+      sdp,
+    }: {
+      callId: string;
+      targetUserId: string;
+      sdp: RTCSessionDescriptionInit;
+    }) => {
+      if (!(await userMayParticipateInCall(callId, userId))) return;
+      if (!(await userMayParticipateInCall(callId, targetUserId))) return;
       io.to(`user:${targetUserId}`).emit('webrtc_answer', { callId, from: userId, sdp });
     },
   );
@@ -174,7 +222,7 @@ export function registerCallHandler(socket: Socket, io: Server): void {
   // ── webrtc_ice: relay ICE candidate ──────────────────────────────────────
   socket.on(
     'webrtc_ice',
-    ({
+    async ({
       callId,
       targetUserId,
       candidate,
@@ -183,6 +231,8 @@ export function registerCallHandler(socket: Socket, io: Server): void {
       targetUserId: string;
       candidate: RTCIceCandidateInit;
     }) => {
+      if (!(await userMayParticipateInCall(callId, userId))) return;
+      if (!(await userMayParticipateInCall(callId, targetUserId))) return;
       io.to(`user:${targetUserId}`).emit('webrtc_ice', { callId, from: userId, candidate });
     },
   );

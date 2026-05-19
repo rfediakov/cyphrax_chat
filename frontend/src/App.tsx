@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import axios from 'axios';
-import { useAuthStore } from './store/auth.store';
+import { useAuthStore, type AuthUser } from './store/auth.store';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -47,17 +47,52 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const { bootstrapped, setAuth, setBootstrapped } = useAuthStore();
 
   useEffect(() => {
-    axios
-      .post<{ accessToken: string }>('/api/v1/auth/refresh', {}, { withCredentials: true })
-      .then(({ data }) => {
-        setAuth(data.accessToken, useAuthStore.getState().user!);
-      })
-      .catch(() => {
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      try {
+        const { data } = await axios.post<{ accessToken: string }>(
+          '/api/v1/auth/refresh',
+          {},
+          { withCredentials: true },
+        );
+
+        // On a fresh device the persisted `user` is null, so the cached value
+        // can't be trusted here. Always re-fetch /users/me with the new token
+        // so the in-memory user matches the refreshed session.
+        const stored = useAuthStore.getState().user;
+        let user: AuthUser | null = stored;
+        try {
+          const me = await axios.get<{ id: string; email: string; username: string }>(
+            '/api/v1/users/me',
+            {
+              headers: { Authorization: `Bearer ${data.accessToken}` },
+              withCredentials: true,
+            },
+          );
+          user = { _id: me.data.id, email: me.data.email, username: me.data.username };
+        } catch {
+          // If /users/me fails, fall back to whatever we already had (may still be null,
+          // in which case we treat the refresh as failed and stay logged out).
+        }
+
+        if (cancelled) return;
+
+        if (user) {
+          setAuth(data.accessToken, user);
+        }
+      } catch {
         // no valid refresh cookie — stay logged out
-      })
-      .finally(() => {
-        setBootstrapped();
-      });
+      } finally {
+        if (!cancelled) setBootstrapped();
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!bootstrapped) return null;
