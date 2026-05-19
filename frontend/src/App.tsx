@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { useEffect } from 'react';
 import axios from 'axios';
 import { useAuthStore, type AuthUser } from './store/auth.store';
+import * as authApi from './api/auth.api';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -44,6 +45,32 @@ function PWAWrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
+function mapMeToAuthUser(me: {
+  id: string;
+  email: string;
+  username: string;
+  isGuest?: boolean;
+}): AuthUser {
+  return {
+    _id: me.id,
+    email: me.email,
+    username: me.username,
+    isGuest: me.isGuest ?? false,
+  };
+}
+
+async function establishGuestSession(
+  setAuth: (token: string, user: AuthUser) => void,
+): Promise<boolean> {
+  try {
+    const { data } = await authApi.loginAsGuest();
+    setAuth(data.accessToken, { ...data.user, isGuest: data.user.isGuest ?? true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const { bootstrapped, setAuth, setBootstrapped } = useAuthStore();
 
@@ -61,20 +88,20 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
         // On a fresh device the persisted `user` is null, so the cached value
         // can't be trusted here. Always re-fetch /users/me with the new token
         // so the in-memory user matches the refreshed session.
-        const stored = useAuthStore.getState().user;
-        let user: AuthUser | null = stored;
+        let user: AuthUser | null = null;
         try {
-          const me = await axios.get<{ id: string; email: string; username: string }>(
-            '/api/v1/users/me',
-            {
-              headers: { Authorization: `Bearer ${data.accessToken}` },
-              withCredentials: true,
-            },
-          );
-          user = { _id: me.data.id, email: me.data.email, username: me.data.username };
+          const me = await axios.get<{
+            id: string;
+            email: string;
+            username: string;
+            isGuest?: boolean;
+          }>('/api/v1/users/me', {
+            headers: { Authorization: `Bearer ${data.accessToken}` },
+            withCredentials: true,
+          });
+          user = mapMeToAuthUser(me.data);
         } catch {
-          // If /users/me fails, fall back to whatever we already had (may still be null,
-          // in which case we treat the refresh as failed and stay logged out).
+          // If /users/me fails, treat the refresh as invalid.
         }
 
         if (cancelled) return;
@@ -83,7 +110,14 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
           setAuth(data.accessToken, user);
         }
       } catch {
-        // no valid refresh cookie — stay logged out
+        // No valid refresh cookie — enter guest mode unless the user opened an
+        // auth page (they may want to sign in with a real account).
+        const onAuthPage = PUBLIC_ROUTE_PREFIXES.some((p) =>
+          window.location.pathname.startsWith(p),
+        );
+        if (!cancelled && !onAuthPage) {
+          await establishGuestSession(setAuth);
+        }
       } finally {
         if (!cancelled) setBootstrapped();
       }
@@ -94,7 +128,7 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setAuth, setBootstrapped]);
 
   if (!bootstrapped) return null;
 
@@ -111,7 +145,8 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const accessToken = useAuthStore((s) => s.accessToken);
+  const { accessToken, bootstrapped } = useAuthStore();
+  if (!bootstrapped) return null;
   if (!accessToken) {
     return <Navigate to="/login" replace />;
   }

@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { AppVersion } from '../ui/AppVersion';
 
 export function TopNav() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, isGuest, logout } = useAuth();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -50,8 +50,13 @@ export function TopNav() {
           <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
             {currentUser?.username?.slice(0, 2).toUpperCase() ?? '?'}
           </div>
-          <span className="text-sm text-gray-200 hidden sm:block max-w-[100px] truncate">
+          <span className="text-sm text-gray-200 hidden sm:block max-w-[120px] truncate">
             {currentUser?.username}
+            {isGuest && (
+              <span className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-400/90">
+                Guest
+              </span>
+            )}
           </span>
           <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

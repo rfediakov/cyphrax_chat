@@ -4,12 +4,25 @@ import { useAuth } from '../hooks/useAuth';
 import { AxiosError } from 'axios';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, enterGuest } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function handleGuest() {
+    setError(null);
+    setGuestLoading(true);
+    try {
+      await enterGuest();
+    } catch {
+      setError('Could not start a guest session. Please try again.');
+    } finally {
+      setGuestLoading(false);
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -97,10 +110,19 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || guestLoading}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition text-sm"
           >
             {loading ? 'Signing in…' : 'Sign in'}
+          </button>
+
+          <button
+            type="button"
+            disabled={loading || guestLoading}
+            onClick={() => void handleGuest()}
+            className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-200 font-medium py-2.5 rounded-lg border border-gray-700 transition text-sm"
+          >
+            {guestLoading ? 'Starting guest session…' : 'Continue as guest'}
           </button>
         </form>
 

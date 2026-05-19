@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/auth.store';
+import { loginAsGuest } from './auth.api';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -69,9 +70,18 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         flushQueue(null, refreshError);
-        useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
-        return Promise.reject(error);
+        try {
+          const { data } = await loginAsGuest();
+          useAuthStore
+            .getState()
+            .setAuth(data.accessToken, { ...data.user, isGuest: data.user.isGuest ?? true });
+          originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+          return api(originalRequest);
+        } catch {
+          useAuthStore.getState().clearAuth();
+          window.location.href = '/login';
+          return Promise.reject(refreshError);
+        }
       } finally {
         isRefreshing = false;
       }

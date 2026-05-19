@@ -23,6 +23,7 @@ export interface IUser extends Document {
   email: string;
   username: string;
   passwordHash: string;
+  isGuest: boolean;
   deletedAt: Date | null;
 
   // Location sharing
@@ -87,6 +88,7 @@ const UserSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     username: { type: String, required: true, unique: true, trim: true, immutable: true },
     passwordHash: { type: String, required: true },
+    isGuest: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
 
     // Location sharing

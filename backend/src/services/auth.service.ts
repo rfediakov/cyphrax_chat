@@ -18,6 +18,7 @@ import {
   NotFoundError,
   UnauthorizedError,
 } from '../lib/errors.js';
+import { NON_LOGINABLE_PASSWORD_HASH } from '../lib/auth.constants.js';
 
 function hashToken(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex');
@@ -142,6 +143,60 @@ export async function login(
   const accessToken = signAccessToken(String(user._id), String(session._id));
 
   return { accessToken, refreshToken: rawRefreshToken, sessionId: String(session._id) };
+}
+
+/**
+ * Create a throwaway guest account and issue tokens so unauthenticated visitors
+ * can browse public rooms and chat without registering.
+ */
+export async function loginAsGuest(
+  meta: { userAgent?: string; ipAddress?: string },
+): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+  user: { id: string; email: string; username: string; isGuest: true };
+}> {
+  const suffix = crypto.randomBytes(4).toString('hex');
+  const username = `guest_${suffix}`;
+  const email = `guest-${suffix}@guest.safegroup.local`;
+
+  const user = await User.create({
+    email,
+    username,
+    passwordHash: NON_LOGINABLE_PASSWORD_HASH,
+    isGuest: true,
+  });
+
+  await ensureMembershipInDefaultRoom(user._id as Types.ObjectId);
+
+  const rawRefreshToken = generateRefreshToken();
+  const tokenHash = hashToken(rawRefreshToken);
+  const expiresAt = new Date(
+    Date.now() + config.jwtRefreshExpiresInDays * 24 * 60 * 60 * 1000,
+  );
+
+  const session = await Session.create({
+    userId: user._id,
+    tokenHash,
+    userAgent: meta.userAgent,
+    ipAddress: meta.ipAddress,
+    expiresAt,
+  });
+
+  const accessToken = signAccessToken(String(user._id), String(session._id));
+
+  return {
+    accessToken,
+    refreshToken: rawRefreshToken,
+    sessionId: String(session._id),
+    user: {
+      id: String(user._id),
+      email: user.email,
+      username: user.username,
+      isGuest: true as const,
+    },
+  };
 }
 
 export async function logout(sessionId: string): Promise<void> {

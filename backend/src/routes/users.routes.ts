@@ -20,6 +20,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response, next: NextFun
       id: String(user._id),
       email: user.email,
       username: user.username,
+      isGuest: user.isGuest ?? false,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     });
@@ -46,6 +47,7 @@ router.get('/search', requireAuth, async (req: Request, res: Response, next: Nex
     const users = await User.find({
       username: { $regex: `^${escapeRegExp(q)}`, $options: 'i' },
       deletedAt: null,
+      isGuest: { $ne: true },
       _id: { $ne: req.user!._id },
     })
       .select('username createdAt')

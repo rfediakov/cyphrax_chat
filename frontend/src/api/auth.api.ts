@@ -23,6 +23,8 @@ export const register = (payload: RegisterPayload) =>
 export const login = (payload: LoginPayload) =>
   api.post<AuthResponse>('/auth/login', payload);
 
+export const loginAsGuest = () => api.post<AuthResponse>('/auth/guest');
+
 export const logout = () => api.post('/auth/logout');
 
 export const refreshToken = () =>

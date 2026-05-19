@@ -5,6 +5,7 @@ import { changePassword, deleteAccount } from '../api/auth.api';
 
 export default function Profile() {
   const user = useAuthStore((s) => s.user);
+  const isGuest = user?.isGuest ?? false;
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const navigate = useNavigate();
 
@@ -86,6 +87,16 @@ export default function Profile() {
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-8 space-y-6">
+        {isGuest && (
+          <div className="rounded-2xl border border-amber-600/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+            You are browsing as a guest.{' '}
+            <Link to="/register" className="font-medium text-amber-300 hover:text-amber-200">
+              Create an account
+            </Link>{' '}
+            to keep your rooms and messages across devices.
+          </div>
+        )}
+
         {/* Account info */}
         <section className="bg-gray-900 border border-gray-700 rounded-2xl p-5">
           <h2 className="text-sm font-bold text-white mb-4">Account information</h2>
@@ -102,6 +113,8 @@ export default function Profile() {
           </div>
         </section>
 
+        {!isGuest && (
+        <>
         {/* Change password */}
         <section className="bg-gray-900 border border-gray-700 rounded-2xl p-5">
           <h2 className="text-sm font-bold text-white mb-4">Change password</h2>
@@ -190,6 +203,8 @@ export default function Profile() {
             {deleteLoading ? 'Deleting…' : 'Delete my account'}
           </button>
         </section>
+        </>
+        )}
 
         <div className="mt-2">
           <Link to="/" className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
