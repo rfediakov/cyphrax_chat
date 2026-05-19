@@ -4,6 +4,7 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-$HOME/da-ad-hackathon}"
 EXTERNAL_IP="${EXTERNAL_IP:-}"
+PUBLIC_URL="${PUBLIC_URL:-}"
 
 # e2-micro has 1GB RAM — parallel npm builds OOM without swap
 if [[ ! -f /swapfile ]]; then
@@ -27,29 +28,36 @@ if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>
   fi
 fi
 
-if ! docker compose version >/dev/null 2>&1; then
+if ! sudo docker compose version >/dev/null 2>&1; then
   echo "ERROR: docker compose is not available after install."
   exit 1
 fi
 
-if [[ -z "$EXTERNAL_IP" ]]; then
+if [[ -n "$PUBLIC_URL" ]]; then
+  FRONTEND_URL="${PUBLIC_URL%/}"
+elif [[ -z "$EXTERNAL_IP" ]]; then
   EXTERNAL_IP=$(curl -fsS -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip 2>/dev/null || true)
 fi
-if [[ -z "$EXTERNAL_IP" ]]; then
-  echo "Set EXTERNAL_IP to your VM public IP and re-run."
+
+if [[ -z "${FRONTEND_URL:-}" && -n "$EXTERNAL_IP" ]]; then
+  FRONTEND_URL="http://${EXTERNAL_IP}:3000"
+fi
+
+if [[ -z "${FRONTEND_URL:-}" ]]; then
+  echo "Set PUBLIC_URL or EXTERNAL_IP and re-run."
   exit 1
 fi
 
 if [[ ! -f backend/.env ]]; then
-  echo "ERROR: backend/.env missing. Copy it from your machine before running this script."
+  echo "ERROR: backend/.env missing on VM."
+  echo "Run once from your machine: ./scripts/gcp-bootstrap-env.sh"
   exit 1
 fi
 
-# Ensure FRONTEND_URL matches public URL
 if grep -q '^FRONTEND_URL=' backend/.env; then
-  sed -i "s|^FRONTEND_URL=.*|FRONTEND_URL=http://${EXTERNAL_IP}:3000|" backend/.env
+  sed -i "s|^FRONTEND_URL=.*|FRONTEND_URL=${FRONTEND_URL}|" backend/.env
 else
-  echo "FRONTEND_URL=http://${EXTERNAL_IP}:3000" >> backend/.env
+  echo "FRONTEND_URL=${FRONTEND_URL}" >> backend/.env
 fi
 
 DC="sudo docker compose -f docker-compose.yml -f docker-compose.gcp.yml"
@@ -66,5 +74,5 @@ $DC build frontend
 $DC up -d frontend
 
 echo ""
-echo "Done. Open: http://${EXTERNAL_IP}:3000"
+echo "Done. Open: ${FRONTEND_URL}"
 $DC ps

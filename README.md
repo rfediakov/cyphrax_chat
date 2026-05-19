@@ -72,3 +72,4 @@ Browser (React SPA)
 
 - [`TECHNICAL_SPEC.md`](TECHNICAL_SPEC.md) — API contracts, schemas, Socket.IO events, and implementation details  
 - [`AGENT_DEVELOPMENT_GUIDE.md`](AGENT_DEVELOPMENT_GUIDE.md) — phased build guide for multi-agent / hackathon workflows  
+- [`docs/DEPLOY_GCP.md`](docs/DEPLOY_GCP.md) — GCP VM deploy, secrets (`deploy/gcp.env`), and bootstrap workflow  

@@ -22,6 +22,7 @@ import ActiveCallOverlay from './components/calls/ActiveCallOverlay';
 import SOSButton from './components/sos/SOSButton';
 import SOSAlertModal from './components/sos/SOSAlertModal';
 import { useOfflineSync } from './hooks/useOfflineSync';
+import { APP_VERSION } from './version';
 // Import network store to activate the singleton watcher
 import './store/network.store';
 
@@ -85,10 +86,20 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function VersionBadge() {
+  const [major, minor] = APP_VERSION.split('.');
+  return (
+    <div className="fixed right-4 top-4 z-50 rounded-full bg-gray-900/80 px-3 py-1 text-xs font-medium text-gray-300 ring-1 ring-white/10 backdrop-blur">
+      Version {major}.{minor}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
+        <VersionBadge />
         <PWAWrapper>
         <AuthBootstrap>
         <Routes>
