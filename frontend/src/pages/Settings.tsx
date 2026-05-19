@@ -733,7 +733,7 @@ export default function Settings() {
   const isRestricted = settings?.restrictedMode ?? false;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white pb-20 md:pb-0">
+    <div className="min-h-screen bg-gray-950 text-white pb-20">
       {/* Parental controls banner */}
       {isRestricted && (
         <div className="sticky top-0 z-40 flex items-center gap-2 bg-yellow-600 px-4 py-2">

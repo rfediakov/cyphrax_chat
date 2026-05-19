@@ -10,7 +10,10 @@ const navItems = [
 
 export default function BottomNav() {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex bg-slate-900 border-t border-slate-700">
+    <nav
+      aria-label="Primary"
+      className="fixed bottom-0 left-0 right-0 z-50 flex bg-slate-900 border-t border-slate-700"
+    >
       {navItems.map(({ to, label, icon }) => (
         <NavLink
           key={to}

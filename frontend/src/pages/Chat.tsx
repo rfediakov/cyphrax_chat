@@ -125,7 +125,7 @@ export default function Chat() {
   }, []);
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-gray-900 overflow-hidden pb-16 md:pb-0">
+    <div className="flex flex-col h-[100dvh] bg-gray-900 overflow-hidden pb-16">
       <TopNav />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">

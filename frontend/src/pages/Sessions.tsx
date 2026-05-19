@@ -60,7 +60,7 @@ export default function Sessions() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white pb-20 md:pb-0">
+    <div className="min-h-screen bg-gray-950 text-white pb-20">
       {/* Top bar */}
       <header className="h-14 bg-gray-900 border-b border-gray-700 flex items-center px-4 gap-4">
         <Link to="/" className="flex items-center gap-2 shrink-0">
