@@ -95,9 +95,12 @@ function Toggle({
       </div>
       <button
         type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
         onClick={() => !disabled && !locked && onChange(!checked)}
         disabled={disabled || locked}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 ${
           checked ? 'bg-blue-600' : 'bg-gray-700'
         }`}
       >
@@ -730,7 +733,7 @@ export default function Settings() {
   const isRestricted = settings?.restrictedMode ?? false;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white pb-20">
+    <div className="min-h-screen bg-gray-950 text-white pb-20 md:pb-0">
       {/* Parental controls banner */}
       {isRestricted && (
         <div className="sticky top-0 z-40 flex items-center gap-2 bg-yellow-600 px-4 py-2">
@@ -749,7 +752,7 @@ export default function Settings() {
               <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z" />
             </svg>
           </div>
-          <span className="font-bold text-white text-sm">Cyphrax</span>
+          <span className="font-bold text-white text-sm">SafeGroup</span>
         </Link>
         <span className="text-gray-500 text-sm">/</span>
         <span className="text-sm text-gray-300">Settings</span>

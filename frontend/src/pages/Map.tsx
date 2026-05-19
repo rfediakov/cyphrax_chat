@@ -119,7 +119,7 @@ export default function Map() {
   const locationsList = Object.values(userLocations);
 
   return (
-    <div className="flex flex-col h-screen bg-slate-900">
+    <div className="flex flex-col h-[100dvh] bg-slate-900 pb-16 md:pb-0">
       {/* Top bar */}
       <div className="flex items-center gap-2 h-12 px-3 bg-slate-900 border-b border-slate-700 shrink-0">
         <button
@@ -268,9 +268,10 @@ export default function Map() {
             <button
               type="button"
               onClick={() => setShowHistory(false)}
+              aria-label="Close location history"
               className="text-slate-400 hover:text-white text-lg leading-none"
             >
-              ✕
+              <span aria-hidden="true">✕</span>
             </button>
           </div>
 

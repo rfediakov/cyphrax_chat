@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import axios from 'axios';
 import { useAuthStore } from './store/auth.store';
@@ -86,10 +86,16 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+const PUBLIC_ROUTE_PREFIXES = ['/login', '/register', '/forgot-password', '/reset-password'];
+
 function VersionBadge() {
+  const { pathname } = useLocation();
+  const isPublicRoute = PUBLIC_ROUTE_PREFIXES.some((p) => pathname.startsWith(p));
+  if (!isPublicRoute) return null;
+
   const [major, minor] = APP_VERSION.split('.');
   return (
-    <div className="fixed right-4 top-4 z-50 rounded-full bg-gray-900/80 px-3 py-1 text-xs font-medium text-gray-300 ring-1 ring-white/10 backdrop-blur">
+    <div className="pointer-events-none fixed left-1/2 bottom-3 z-30 -translate-x-1/2 rounded-full bg-gray-900/80 px-3 py-1 text-xs font-medium text-gray-400 ring-1 ring-white/10 backdrop-blur">
       Version {major}.{minor}
     </div>
   );
