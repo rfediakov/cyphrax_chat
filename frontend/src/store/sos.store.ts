@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import axios from 'axios';
+import api from '../api/axios';
 import { socketSingleton } from '../hooks/useSocket';
 import { enqueue } from '../lib/offlineQueue';
 import { useLocationStore } from './location.store';
@@ -76,7 +76,7 @@ export const useSOSStore = create<SOSState>((set) => ({
     } else {
       // Fallback to REST
       try {
-        await axios.delete(`/api/v1/sos/${sosId}`, { withCredentials: true });
+        await api.delete(`/sos/${sosId}`);
         set({ myActiveSOSId: null });
         set((s) => ({
           activeSOSEvents: s.activeSOSEvents.filter((e) => e._id !== sosId),
@@ -104,9 +104,7 @@ export const useSOSStore = create<SOSState>((set) => ({
 
   hydrateFromServer: async () => {
     try {
-      const { data } = await axios.get<{ sosEvents: SOSEvent[] }>('/api/v1/sos', {
-        withCredentials: true,
-      });
+      const { data } = await api.get<{ sosEvents: SOSEvent[] }>('/sos');
       set({ activeSOSEvents: data.sosEvents });
     } catch (err) {
       console.warn('[SOSStore] Failed to hydrate SOS events:', err);
