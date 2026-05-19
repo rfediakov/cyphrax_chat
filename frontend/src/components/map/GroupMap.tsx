@@ -15,8 +15,11 @@ import {
 } from 'react-leaflet';
 import type { LeafletMouseEvent } from 'leaflet';
 import UserMarker from './UserMarker';
+import CustomMarker from './CustomMarker';
 import type { LiveLocation, OwnPosition } from '../../store/location.store';
 import type { SOSEvent } from '../../store/sos.store';
+import type { MapMarker } from '../../store/marker.store';
+import type { MapLayerId } from '../../store/mapLayers.store';
 
 // Fix the default Leaflet marker icon paths for Vite's asset pipeline. Runs
 // once at module load; subsequent imports are no-ops.
@@ -94,6 +97,17 @@ export interface GroupMapProps {
   peerLocations: LiveLocation[];
   /** Active SOS pins to overlay. Pass [] to disable. */
   sosEvents?: SOSEvent[];
+  /** Custom user-placed markers. Pass [] (or omit) to disable. */
+  customMarkers?: MapMarker[];
+  /** Caller's own user id — used to enable owner-only actions (delete). */
+  currentUserId?: string | null;
+  /** Called when the user confirms deletion of one of their own markers. */
+  onDeleteMarker?: (marker: MapMarker) => void;
+  /**
+   * Set of hidden layer ids. When a layer id is present here, the matching
+   * entities are not rendered. Defaults to "show everything".
+   */
+  hiddenLayers?: Set<MapLayerId>;
   /**
    * Click handler for manual location setting. When omitted, the map is
    * passive (no click-to-set behaviour).
@@ -127,10 +141,28 @@ export interface GroupMapProps {
  * Reusable group map. Renders the OpenStreetMap tile layer, the caller's
  * position, peer pins, and (optionally) SOS overlays.
  */
+const EMPTY_LAYERS = new Set<MapLayerId>();
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 export default function GroupMap({
   selfPosition,
   peerLocations,
   sosEvents = [],
+  customMarkers = [],
+  currentUserId = null,
+  onDeleteMarker,
+  hiddenLayers = EMPTY_LAYERS,
   onMapClick,
   onResolveSOS,
   onMessagePeer,
@@ -140,6 +172,9 @@ export default function GroupMap({
   className = '',
   showAttribution = true,
 }: GroupMapProps) {
+  const selfVisible = !hiddenLayers.has('self');
+  const peersVisible = !hiddenLayers.has('peers');
+  const sosVisible = !hiddenLayers.has('sos');
   const center: [number, number] = useMemo(
     () =>
       selfPosition
@@ -173,7 +208,7 @@ export default function GroupMap({
         {onMapClick && <ClickHandler onMapClick={onMapClick} />}
 
         {/* Own marker + accuracy circle */}
-        {selfPosition && (
+        {selfPosition && selfVisible && (
           <>
             <UserMarker
               location={{
@@ -205,58 +240,83 @@ export default function GroupMap({
         )}
 
         {/* Peers */}
-        {peerLocations.map((loc) => (
-          <React.Fragment key={loc.userId}>
-            <UserMarker
-              location={loc}
-              isCurrentUser={false}
-              currentLat={selfPosition?.latitude}
-              currentLng={selfPosition?.longitude}
-              onMessageClick={() => onMessagePeer?.(loc.userId)}
-            />
-            {loc.accuracy > 0 && (
-              <Circle
-                center={[loc.lat, loc.lng]}
-                radius={loc.accuracy}
-                pathOptions={{
-                  color: '#3b82f6',
-                  fillColor: '#3b82f6',
-                  fillOpacity: 0.12,
-                  weight: 1,
-                }}
+        {peersVisible &&
+          peerLocations.map((loc) => (
+            <React.Fragment key={loc.userId}>
+              <UserMarker
+                location={loc}
+                isCurrentUser={false}
+                currentLat={selfPosition?.latitude}
+                currentLng={selfPosition?.longitude}
+                onMessageClick={() => onMessagePeer?.(loc.userId)}
               />
-            )}
-          </React.Fragment>
-        ))}
+              {loc.accuracy > 0 && (
+                <Circle
+                  center={[loc.lat, loc.lng]}
+                  radius={loc.accuracy}
+                  pathOptions={{
+                    color: '#3b82f6',
+                    fillColor: '#3b82f6',
+                    fillOpacity: 0.12,
+                    weight: 1,
+                  }}
+                />
+              )}
+            </React.Fragment>
+          ))}
+
+        {/* Custom markers */}
+        {customMarkers
+          .filter((m) => !hiddenLayers.has(`marker:${m.kind}`))
+          .map((marker) => {
+            const distanceKm = selfPosition
+              ? haversineKm(
+                  selfPosition.latitude,
+                  selfPosition.longitude,
+                  marker.lat,
+                  marker.lng,
+                )
+              : null;
+            return (
+              <CustomMarker
+                key={marker._id}
+                marker={marker}
+                isOwn={!!currentUserId && marker.userId === currentUserId}
+                distanceKm={distanceKm}
+                onDelete={onDeleteMarker}
+              />
+            );
+          })}
 
         {/* SOS overlays */}
-        {sosEvents.map((sos) => (
-          <Marker
-            key={sos._id}
-            position={[sos.lat, sos.lng]}
-            icon={SOS_ICON}
-            zIndexOffset={1000}
-          >
-            <Popup>
-              <div className="text-sm p-1 min-w-[160px]">
-                <p className="font-bold text-red-600 mb-1">SOS — {sos.username}</p>
-                <p className="text-slate-700 italic mb-2">"{sos.message}"</p>
-                <p className="text-slate-500 text-xs mb-2">
-                  {new Date(sos.createdAt).toLocaleTimeString()}
-                </p>
-                {onResolveSOS && (
-                  <button
-                    type="button"
-                    onClick={() => onResolveSOS(sos._id)}
-                    className="w-full py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
-                  >
-                    Mark as Resolved
-                  </button>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {sosVisible &&
+          sosEvents.map((sos) => (
+            <Marker
+              key={sos._id}
+              position={[sos.lat, sos.lng]}
+              icon={SOS_ICON}
+              zIndexOffset={1000}
+            >
+              <Popup>
+                <div className="text-sm p-1 min-w-[160px]">
+                  <p className="font-bold text-red-600 mb-1">SOS — {sos.username}</p>
+                  <p className="text-slate-700 italic mb-2">"{sos.message}"</p>
+                  <p className="text-slate-500 text-xs mb-2">
+                    {new Date(sos.createdAt).toLocaleTimeString()}
+                  </p>
+                  {onResolveSOS && (
+                    <button
+                      type="button"
+                      onClick={() => onResolveSOS(sos._id)}
+                      className="w-full py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium"
+                    >
+                      Mark as Resolved
+                    </button>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
       </MapContainer>
     </div>
   );

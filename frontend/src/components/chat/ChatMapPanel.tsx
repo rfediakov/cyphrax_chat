@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GroupMap from '../map/GroupMap';
+import MapLegend from '../map/MapLegend';
+import AddMarkerSheet from '../map/AddMarkerSheet';
 import { useAuthStore } from '../../store/auth.store';
 import { useLocationStore } from '../../store/location.store';
 import { useSOSStore } from '../../store/sos.store';
+import { useMarkerStore } from '../../store/marker.store';
+import { useMapLayersStore } from '../../store/mapLayers.store';
 import { useLocationSharing } from '../../hooks/useLocationSharing';
 import { useRoomLiveLocations } from '../../hooks/useRoomLiveLocations';
+import { useRoomMarkers } from '../../hooks/useRoomMarkers';
 import { useMyLocation } from '../../hooks/useMyLocation';
+import type { MarkerKind } from '../../lib/markerKinds';
+import type { MapMarker } from '../../store/marker.store';
 
 interface ChatMapPanelProps {
   /** Active room id. The panel only renders for room contexts. */
@@ -24,8 +31,11 @@ interface ChatMapPanelProps {
 export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
   const navigate = useNavigate();
 
+  type ToolMode = 'idle' | 'pin' | 'marker';
   const [expanded, setExpanded] = useState(false);
-  const [pickerMode, setPickerMode] = useState(false);
+  const [toolMode, setToolMode] = useState<ToolMode>('idle');
+  const [pendingMarker, setPendingMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [savingMarker, setSavingMarker] = useState(false);
 
   const currentPosition = useLocationStore((s) => s.currentPosition);
   const userLocations = useLocationStore((s) => s.userLocations);
@@ -33,10 +43,21 @@ export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
   const sosEvents = useSOSStore((s) => s.activeSOSEvents);
   const resolveSOS = useSOSStore((s) => s.resolveSOS);
 
+  const markersByRoom = useMarkerStore((s) => s.markersByRoom);
+  const createMarker = useMarkerStore((s) => s.createMarker);
+  const deleteMarker = useMarkerStore((s) => s.deleteMarker);
+  const hiddenLayers = useMapLayersStore((s) => s.hidden);
+
   // Wire up: GPS watcher (only emits when sharingActive is true) + initial
   // hydration of peer positions from the REST endpoint.
   useLocationSharing(roomId);
   useRoomLiveLocations(expanded ? roomId : null);
+  useRoomMarkers(expanded ? roomId : null);
+
+  const markers = useMemo(
+    () => markersByRoom[roomId] ?? [],
+    [markersByRoom, roomId],
+  );
 
   const {
     permission,
@@ -67,12 +88,48 @@ export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
     [sosEvents, roomId],
   );
 
-  const handleMapClick = pickerMode
-    ? async (lat: number, lng: number) => {
-        await setManualPosition(lat, lng, roomId);
-        setPickerMode(false);
-      }
-    : undefined;
+  const handleMapClick =
+    toolMode !== 'idle'
+      ? async (lat: number, lng: number) => {
+          if (toolMode === 'pin') {
+            await setManualPosition(lat, lng, roomId);
+            setToolMode('idle');
+          } else if (toolMode === 'marker') {
+            setPendingMarker({ lat, lng });
+          }
+        }
+      : undefined;
+
+  const handleMarkerSubmit = async ({
+    kind,
+    label,
+    description,
+  }: {
+    kind: MarkerKind;
+    label: string;
+    description: string;
+  }) => {
+    if (!pendingMarker) return;
+    setSavingMarker(true);
+    try {
+      await createMarker({
+        roomId,
+        kind,
+        label,
+        description,
+        lat: pendingMarker.lat,
+        lng: pendingMarker.lng,
+      });
+    } finally {
+      setSavingMarker(false);
+      setPendingMarker(null);
+      setToolMode('idle');
+    }
+  };
+
+  const handleDeleteMarker = (marker: MapMarker) => {
+    void deleteMarker(roomId, marker._id);
+  };
 
   const peerCount = peers.length;
 
@@ -163,9 +220,11 @@ export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
 
             <button
               type="button"
-              onClick={() => setPickerMode((v) => !v)}
+              onClick={() =>
+                setToolMode((m) => (m === 'pin' ? 'idle' : 'pin'))
+              }
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                pickerMode
+                toolMode === 'pin'
                   ? 'bg-amber-500 text-black hover:bg-amber-400'
                   : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
               }`}
@@ -183,7 +242,34 @@ export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
                   d="M15 10l4.55-4.55a2 2 0 10-2.83-2.83L12 7.17m-1.41 8.49l-3.18 3.18a2 2 0 11-2.83-2.83l3.18-3.18M15 10l-7-7m7 7L8 3"
                 />
               </svg>
-              {pickerMode ? 'Tap the map…' : 'Pick on map'}
+              {toolMode === 'pin' ? 'Tap the map…' : 'Pick on map'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setToolMode((m) => (m === 'marker' ? 'idle' : 'marker'))
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                toolMode === 'marker'
+                  ? 'bg-blue-500 text-white hover:bg-blue-400'
+                  : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+              }`}
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 5v14M5 12h14"
+                />
+              </svg>
+              {toolMode === 'marker' ? 'Tap to place' : 'Add marker'}
             </button>
 
             <button
@@ -211,27 +297,61 @@ export default function ChatMapPanel({ roomId }: ChatMapPanelProps) {
               {error}
             </div>
           )}
-          {pickerMode && (
+          {toolMode === 'pin' && (
             <div className="px-3 py-1.5 text-xs text-amber-200 bg-amber-900/30 border-t border-amber-700/40">
               Tap anywhere on the map to set your location.
             </div>
           )}
+          {toolMode === 'marker' && (
+            <div className="px-3 py-1.5 text-xs text-blue-200 bg-blue-900/30 border-t border-blue-700/40">
+              Tap the map to drop a shared marker for your group.
+            </div>
+          )}
 
           {/* Map */}
-          <div className={`h-64 sm:h-80 ${pickerMode ? 'cursor-crosshair' : ''}`}>
+          <div
+            className={`h-64 sm:h-80 relative ${
+              toolMode !== 'idle' ? 'cursor-crosshair' : ''
+            }`}
+          >
             <GroupMap
               selfPosition={currentPosition}
               peerLocations={peers}
               sosEvents={roomSOSEvents}
+              customMarkers={markers}
+              currentUserId={currentUserId}
+              hiddenLayers={hiddenLayers}
               onMapClick={handleMapClick}
               onResolveSOS={(id) => void resolveSOS(id)}
               onMessagePeer={(userId) => navigate(`/?dialog=${userId}`)}
-              followSelf={pickerMode ? 'never' : 'first-fix'}
+              onDeleteMarker={handleDeleteMarker}
+              followSelf={toolMode !== 'idle' ? 'never' : 'first-fix'}
               showAttribution={false}
             />
+
+            <div className="absolute top-2 left-2 z-[1000]">
+              <MapLegend
+                hasSelf={!!currentPosition}
+                peerCount={peers.length}
+                sosCount={roomSOSEvents.length}
+                markers={markers}
+                compact
+              />
+            </div>
           </div>
         </div>
       )}
+
+      <AddMarkerSheet
+        open={pendingMarker !== null}
+        position={pendingMarker}
+        busy={savingMarker}
+        onCancel={() => {
+          setPendingMarker(null);
+          setToolMode('idle');
+        }}
+        onSubmit={handleMarkerSubmit}
+      />
     </section>
   );
 }

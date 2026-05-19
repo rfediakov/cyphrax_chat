@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GroupMap from '../components/map/GroupMap';
+import MapLegend from '../components/map/MapLegend';
+import AddMarkerSheet from '../components/map/AddMarkerSheet';
 import { useAuthStore } from '../store/auth.store';
 import { useLocationStore } from '../store/location.store';
 import { useChatStore } from '../store/chat.store';
 import { useSOSStore } from '../store/sos.store';
+import { useMarkerStore } from '../store/marker.store';
+import { useMapLayersStore } from '../store/mapLayers.store';
 import { useLocationSharing } from '../hooks/useLocationSharing';
 import { useRoomLiveLocations } from '../hooks/useRoomLiveLocations';
+import { useRoomMarkers } from '../hooks/useRoomMarkers';
 import { useMyLocation } from '../hooks/useMyLocation';
 import { updateSharing } from '../api/location.api';
 import api from '../api/axios';
+import type { MarkerKind } from '../lib/markerKinds';
+import type { MapMarker } from '../store/marker.store';
 
 interface HistoryEntry {
   _id: string;
@@ -36,8 +43,17 @@ export default function Map() {
   const sosEvents = useSOSStore((s) => s.activeSOSEvents);
   const resolveSOS = useSOSStore((s) => s.resolveSOS);
 
+  const markersByRoom = useMarkerStore((s) => s.markersByRoom);
+  const createMarker = useMarkerStore((s) => s.createMarker);
+  const deleteMarker = useMarkerStore((s) => s.deleteMarker);
+  const hiddenLayers = useMapLayersStore((s) => s.hidden);
+
+  type ToolMode = 'idle' | 'pin' | 'marker';
+
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [pickerMode, setPickerMode] = useState(false);
+  const [toolMode, setToolMode] = useState<ToolMode>('idle');
+  const [pendingMarker, setPendingMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [savingMarker, setSavingMarker] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -52,6 +68,12 @@ export default function Map() {
 
   useLocationSharing(activeRoomId);
   useRoomLiveLocations(activeRoomId);
+  useRoomMarkers(activeRoomId);
+
+  const markers = useMemo(
+    () => (activeRoomId ? markersByRoom[activeRoomId] ?? [] : []),
+    [markersByRoom, activeRoomId],
+  );
 
   const {
     permission,
@@ -105,12 +127,60 @@ export default function Map() {
 
   const handleMapClick = useCallback(
     async (lat: number, lng: number) => {
-      if (!pickerMode) return;
-      await setManualPosition(lat, lng, activeRoomId);
-      setPickerMode(false);
+      if (toolMode === 'pin') {
+        await setManualPosition(lat, lng, activeRoomId);
+        setToolMode('idle');
+      } else if (toolMode === 'marker') {
+        if (!activeRoomId) return;
+        setPendingMarker({ lat, lng });
+      }
     },
-    [pickerMode, setManualPosition, activeRoomId],
+    [toolMode, setManualPosition, activeRoomId],
   );
+
+  const handleMarkerSubmit = useCallback(
+    async ({
+      kind,
+      label,
+      description,
+    }: {
+      kind: MarkerKind;
+      label: string;
+      description: string;
+    }) => {
+      if (!pendingMarker || !activeRoomId) return;
+      setSavingMarker(true);
+      try {
+        await createMarker({
+          roomId: activeRoomId,
+          kind,
+          label,
+          description,
+          lat: pendingMarker.lat,
+          lng: pendingMarker.lng,
+        });
+      } finally {
+        setSavingMarker(false);
+        setPendingMarker(null);
+        setToolMode('idle');
+      }
+    },
+    [pendingMarker, activeRoomId, createMarker],
+  );
+
+  const handleDeleteMarker = useCallback(
+    (marker: MapMarker) => {
+      if (!activeRoomId) return;
+      void deleteMarker(activeRoomId, marker._id);
+    },
+    [activeRoomId, deleteMarker],
+  );
+
+  const followBehaviour: 'never' | 'first-fix' =
+    toolMode === 'idle' ? 'first-fix' : 'never';
+
+  const cursorClass =
+    toolMode === 'pin' || toolMode === 'marker' ? 'cursor-crosshair' : '';
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -196,18 +266,32 @@ export default function Map() {
       )}
 
       {/* Map container */}
-      <div className={`flex-1 relative ${pickerMode ? 'cursor-crosshair' : ''}`}>
+      <div className={`flex-1 relative ${cursorClass}`}>
         <GroupMap
           selfPosition={currentPosition}
           peerLocations={peers}
           sosEvents={sosEvents}
-          onMapClick={pickerMode ? handleMapClick : undefined}
+          customMarkers={markers}
+          currentUserId={currentUserId}
+          hiddenLayers={hiddenLayers}
+          onMapClick={toolMode !== 'idle' ? handleMapClick : undefined}
           onResolveSOS={(id) => void resolveSOS(id)}
           onMessagePeer={(userId) => navigate(`/?dialog=${userId}`)}
-          followSelf={pickerMode ? 'never' : 'first-fix'}
+          onDeleteMarker={handleDeleteMarker}
+          followSelf={followBehaviour}
         />
 
-        {/* Floating controls */}
+        {/* Legend (top-left) */}
+        <div className="absolute top-3 left-3 z-[1000]">
+          <MapLegend
+            hasSelf={!!currentPosition}
+            peerCount={peers.length}
+            sosCount={sosEvents.length}
+            markers={markers}
+          />
+        </div>
+
+        {/* Floating controls (top-right) */}
         <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-2">
           <button
             type="button"
@@ -235,13 +319,19 @@ export default function Map() {
 
           <button
             type="button"
-            onClick={() => setPickerMode((v) => !v)}
+            onClick={() =>
+              setToolMode((m) => (m === 'pin' ? 'idle' : 'pin'))
+            }
             className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium shadow-lg backdrop-blur transition-colors ${
-              pickerMode
+              toolMode === 'pin'
                 ? 'bg-amber-500 text-black hover:bg-amber-400'
                 : 'bg-slate-900/90 text-slate-100 hover:bg-slate-800'
             }`}
-            title={pickerMode ? 'Tap the map to drop a pin' : 'Pick location on map'}
+            title={
+              toolMode === 'pin'
+                ? 'Tap the map to drop a pin'
+                : 'Pick your own location on map'
+            }
           >
             <svg
               className="w-4 h-4"
@@ -262,7 +352,42 @@ export default function Map() {
                 d="M12 22s-7-7.58-7-13a7 7 0 1114 0c0 5.42-7 13-7 13z"
               />
             </svg>
-            {pickerMode ? 'Tap to drop' : 'Pick on map'}
+            {toolMode === 'pin' ? 'Tap to drop' : 'Pick on map'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setToolMode((m) => (m === 'marker' ? 'idle' : 'marker'))
+            }
+            disabled={!activeRoomId}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium shadow-lg backdrop-blur transition-colors disabled:opacity-50 ${
+              toolMode === 'marker'
+                ? 'bg-blue-500 text-white hover:bg-blue-400'
+                : 'bg-slate-900/90 text-slate-100 hover:bg-slate-800'
+            }`}
+            title={
+              !activeRoomId
+                ? 'Pick a room first to share markers'
+                : toolMode === 'marker'
+                ? 'Tap the map to drop a marker'
+                : 'Add a shared marker'
+            }
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 5v14M5 12h14"
+              />
+            </svg>
+            {toolMode === 'marker' ? 'Tap to place' : 'Add marker'}
           </button>
         </div>
 
@@ -275,12 +400,28 @@ export default function Map() {
           History
         </button>
 
-        {pickerMode && (
-          <div className="absolute top-3 left-3 z-[1000] px-3 py-1.5 rounded-lg text-xs text-amber-200 bg-amber-900/70 backdrop-blur shadow-lg">
+        {toolMode === 'pin' && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] px-3 py-1.5 rounded-lg text-xs text-amber-200 bg-amber-900/80 backdrop-blur shadow-lg">
             Tap anywhere on the map to set your location.
           </div>
         )}
+        {toolMode === 'marker' && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] px-3 py-1.5 rounded-lg text-xs text-blue-100 bg-blue-900/80 backdrop-blur shadow-lg">
+            Tap the map to drop a shared marker.
+          </div>
+        )}
       </div>
+
+      <AddMarkerSheet
+        open={pendingMarker !== null}
+        position={pendingMarker}
+        busy={savingMarker}
+        onCancel={() => {
+          setPendingMarker(null);
+          setToolMode('idle');
+        }}
+        onSubmit={handleMarkerSubmit}
+      />
 
       {/* History drawer */}
       {showHistory && (
