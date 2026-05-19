@@ -8,6 +8,39 @@ The single source of truth for the version is the [`/VERSION`](./VERSION) file.
 Run `./scripts/sync-version.sh [new-version]` to propagate it to
 `frontend/package.json`, `backend/package.json`, and `frontend/src/version.ts`.
 
+## [2.3.0] - 2026-05-19
+
+### Fixed
+- **SOS emergency alert is now dismissible**: previously the only "close" path
+  was the *I'm going to help* button, which calls `sos_resolve`. The server
+  only authorizes the victim or a room admin to resolve, so for every other
+  helper the request silently failed and the full-screen red alert stayed
+  pinned on top of the app with no way out.
+
+### Changed
+- **Version display**: shows full semver (`v2.3.0`) instead of truncating to
+  `major.minor`; visible in the top nav on every authenticated screen (not only
+  Chat/login) via a shared `AppVersion` component and `AuthenticatedLayout`.
+
+### Added
+- **Local dismiss for SOS alerts** (`SOSAlertModal`):
+  - Close (×) button in the top-right of each alert card (44×44 tap target,
+    `aria-label="Dismiss alert"`, visible focus ring).
+  - Secondary *Dismiss* button next to the primary CTA for users who don't
+    want to commit to helping.
+  - `Esc` key dismisses all currently visible alerts.
+  - *Dismiss all (N)* shortcut when 2+ alerts are stacked.
+  - *I'm going to help* now optimistically dismisses locally **and** still
+    attempts `sos_resolve` — admins/victims continue to clear it for the
+    whole room, helpers are no longer stuck.
+- **Accessibility**: alert overlay exposes `role="dialog"` / `aria-modal`
+  and each card uses `role="alertdialog"` with `aria-labelledby` /
+  `aria-describedby`.
+- **`dismissedSOSIds`** state in `useSOSStore` with `dismissSOS(id)` action;
+  dismissals are per-SOS-id, scoped to the session, auto-pruned when the
+  underlying event is resolved or removed, and re-cleared if the same id is
+  re-broadcast by the server.
+
 ## [2.2.0] - 2026-05-19
 
 ### Fixed

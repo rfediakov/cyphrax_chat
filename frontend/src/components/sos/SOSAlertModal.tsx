@@ -42,9 +42,10 @@ interface SOSAlertCardProps {
   sos: SOSEvent;
   isOwnSOS: boolean;
   onResolve: (sosId: string) => void;
+  onDismiss: (sosId: string) => void;
 }
 
-function SOSAlertCard({ sos, isOwnSOS, onResolve }: SOSAlertCardProps) {
+function SOSAlertCard({ sos, isOwnSOS, onResolve, onDismiss }: SOSAlertCardProps) {
   const navigate = useNavigate();
 
   const handleOpenMap = () => {
@@ -56,18 +57,60 @@ function SOSAlertCard({ sos, isOwnSOS, onResolve }: SOSAlertCardProps) {
     window.open(`tel:`, '_self');
   };
 
+  const handleAcknowledge = () => {
+    // Optimistically dismiss locally so the helper isn't stuck if the server
+    // rejects sos_resolve (only the victim or a room admin is authorized).
+    // We still attempt to resolve — for admins/victims this clears it globally.
+    onResolve(sos._id);
+    onDismiss(sos._id);
+  };
+
   return (
-    <div className="bg-slate-900 rounded-2xl border border-red-700 p-5 shadow-2xl mx-auto w-full max-w-sm">
+    <div
+      role="alertdialog"
+      aria-labelledby={`sos-title-${sos._id}`}
+      aria-describedby={`sos-msg-${sos._id}`}
+      className="relative bg-slate-900 rounded-2xl border border-red-700 p-5 pr-14 shadow-2xl mx-auto w-full max-w-sm"
+    >
+      <button
+        type="button"
+        onClick={() => onDismiss(sos._id)}
+        aria-label="Dismiss alert"
+        className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-full text-slate-300 hover:text-white hover:bg-slate-700/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="w-5 h-5"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-3xl">🚨</span>
-        <h2 className="text-red-400 font-bold text-lg uppercase tracking-wide">Emergency Alert</h2>
+        <span className="text-3xl" aria-hidden="true">🚨</span>
+        <h2
+          id={`sos-title-${sos._id}`}
+          className="text-red-400 font-bold text-lg uppercase tracking-wide"
+        >
+          Emergency Alert
+        </h2>
       </div>
 
       <p className="text-white font-semibold text-base mb-1">
         {isOwnSOS ? 'You triggered an SOS' : `${sos.username} needs help!`}
       </p>
 
-      <p className="text-slate-300 text-sm mb-3 italic">"{sos.message}"</p>
+      <p id={`sos-msg-${sos._id}`} className="text-slate-300 text-sm mb-3 italic">
+        "{sos.message}"
+      </p>
 
       <p className="text-slate-400 text-xs mb-4">{formatRelativeTime(sos.createdAt)}</p>
 
@@ -92,13 +135,22 @@ function SOSAlertCard({ sos, isOwnSOS, onResolve }: SOSAlertCardProps) {
 
       <div className="flex gap-2">
         {!isOwnSOS && (
-          <button
-            type="button"
-            onClick={() => onResolve(sos._id)}
-            className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-sm font-medium transition-colors"
-          >
-            ✓ I'm going to help
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => onDismiss(sos._id)}
+              className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-medium transition-colors"
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              onClick={handleAcknowledge}
+              className="flex-1 py-2.5 bg-green-700 hover:bg-green-800 text-white rounded-xl text-sm font-semibold transition-colors"
+            >
+              ✓ I'm going to help
+            </button>
+          </>
         )}
         {isOwnSOS && (
           <button
@@ -116,7 +168,9 @@ function SOSAlertCard({ sos, isOwnSOS, onResolve }: SOSAlertCardProps) {
 
 export default function SOSAlertModal() {
   const activeSOSEvents = useSOSStore((s) => s.activeSOSEvents);
+  const dismissedSOSIds = useSOSStore((s) => s.dismissedSOSIds);
   const resolveSOS = useSOSStore((s) => s.resolveSOS);
+  const dismissSOS = useSOSStore((s) => s.dismissSOS);
   const myActiveSOSId = useSOSStore((s) => s.myActiveSOSId);
   const currentUserId = useAuthStore((s) => s.user?._id ?? '');
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -153,21 +207,53 @@ export default function SOSAlertModal() {
   }, [activeSOSEvents]);
 
   // Only show modal for OTHER people's SOS (own SOS is shown via SOSButton state)
-  const othersSOSEvents = activeSOSEvents.filter((e) => e.userId !== currentUserId);
+  // and hide alerts the user has dismissed locally.
+  const dismissedSet = new Set(dismissedSOSIds);
+  const visibleSOSEvents = activeSOSEvents.filter(
+    (e) => e.userId !== currentUserId && !dismissedSet.has(e._id),
+  );
 
-  if (othersSOSEvents.length === 0) return null;
+  // ESC dismisses all currently visible alerts.
+  useEffect(() => {
+    if (visibleSOSEvents.length === 0) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      for (const sos of visibleSOSEvents) dismissSOS(sos._id);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [visibleSOSEvents, dismissSOS]);
+
+  if (visibleSOSEvents.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-[1400] flex flex-col items-center justify-center bg-black bg-opacity-80 p-4 gap-4 overflow-y-auto">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Emergency alerts"
+      className="fixed inset-0 z-[1400] flex flex-col items-center justify-center bg-black bg-opacity-80 p-4 gap-4 overflow-y-auto"
+    >
       <div className="w-full max-w-sm flex flex-col gap-4">
-        {othersSOSEvents.map((sos) => (
+        {visibleSOSEvents.map((sos) => (
           <SOSAlertCard
             key={sos._id}
             sos={sos}
             isOwnSOS={sos._id === myActiveSOSId}
             onResolve={(id) => void resolveSOS(id)}
+            onDismiss={dismissSOS}
           />
         ))}
+        {visibleSOSEvents.length > 1 && (
+          <button
+            type="button"
+            onClick={() => {
+              for (const sos of visibleSOSEvents) dismissSOS(sos._id);
+            }}
+            className="self-center mt-1 py-2 px-4 text-slate-300 hover:text-white text-sm underline underline-offset-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded"
+          >
+            Dismiss all ({visibleSOSEvents.length})
+          </button>
+        )}
       </div>
     </div>
   );

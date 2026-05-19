@@ -22,7 +22,8 @@ import ActiveCallOverlay from './components/calls/ActiveCallOverlay';
 import SOSButton from './components/sos/SOSButton';
 import SOSAlertModal from './components/sos/SOSAlertModal';
 import { useOfflineSync } from './hooks/useOfflineSync';
-import { APP_VERSION } from './version';
+import { TopNav } from './components/layout/TopNav';
+import { AppVersion } from './components/ui/AppVersion';
 // Import network store to activate the singleton watcher
 import './store/network.store';
 
@@ -64,6 +65,15 @@ function AuthBootstrap({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col h-[100dvh] overflow-hidden bg-gray-900">
+      <TopNav />
+      <div className="flex-1 min-h-0 overflow-y-auto pb-16">{children}</div>
+    </div>
+  );
+}
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
   if (!accessToken) {
@@ -71,7 +81,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   }
   return (
     <>
-      {children}
+      <AuthenticatedLayout>{children}</AuthenticatedLayout>
       <BottomNav />
       <SOSButton />
     </>
@@ -93,10 +103,9 @@ function VersionBadge() {
   const isPublicRoute = PUBLIC_ROUTE_PREFIXES.some((p) => pathname.startsWith(p));
   if (!isPublicRoute) return null;
 
-  const [major, minor] = APP_VERSION.split('.');
   return (
-    <div className="pointer-events-none fixed left-1/2 bottom-3 z-30 -translate-x-1/2 rounded-full bg-gray-900/80 px-3 py-1 text-xs font-medium text-gray-400 ring-1 ring-white/10 backdrop-blur">
-      Version {major}.{minor}
+    <div className="pointer-events-none fixed left-1/2 bottom-3 z-30 -translate-x-1/2 rounded-full bg-gray-900/80 px-3 py-1 ring-1 ring-white/10 backdrop-blur">
+      <AppVersion className="text-gray-400" />
     </div>
   );
 }

@@ -20,9 +20,16 @@ export interface SOSEvent {
 interface SOSState {
   myActiveSOSId: string | null;
   activeSOSEvents: SOSEvent[];
+  /**
+   * IDs of SOS events the current user has dismissed locally. Dismissed alerts
+   * are hidden from the alert modal but remain "active" globally — only the
+   * victim or a room admin can truly resolve an SOS via the server.
+   */
+  dismissedSOSIds: string[];
 
   triggerSOS: (roomId: string, message?: string) => Promise<void>;
   resolveSOS: (sosId: string) => Promise<void>;
+  dismissSOS: (sosId: string) => void;
   addSOSEvent: (event: SOSEvent) => void;
   removeSOSEvent: (sosId: string) => void;
   hydrateFromServer: () => Promise<void>;
@@ -31,6 +38,7 @@ interface SOSState {
 export const useSOSStore = create<SOSState>((set) => ({
   myActiveSOSId: null,
   activeSOSEvents: [],
+  dismissedSOSIds: [],
 
   triggerSOS: async (roomId, message = "I'm in danger") => {
     const isOnline = useNetworkStore.getState().isOnline;
@@ -87,11 +95,27 @@ export const useSOSStore = create<SOSState>((set) => ({
     }
   },
 
+  dismissSOS: (sosId) => {
+    set((s) =>
+      s.dismissedSOSIds.includes(sosId)
+        ? s
+        : { dismissedSOSIds: [...s.dismissedSOSIds, sosId] },
+    );
+  },
+
   addSOSEvent: (event) => {
     set((s) => {
       const exists = s.activeSOSEvents.some((e) => e._id === event._id);
       if (exists) return s;
-      return { activeSOSEvents: [...s.activeSOSEvents, event] };
+      // If a previously-dismissed id reappears (e.g. server replay), clear its
+      // dismissal so the user sees it again.
+      const dismissedSOSIds = s.dismissedSOSIds.includes(event._id)
+        ? s.dismissedSOSIds.filter((id) => id !== event._id)
+        : s.dismissedSOSIds;
+      return {
+        activeSOSEvents: [...s.activeSOSEvents, event],
+        dismissedSOSIds,
+      };
     });
   },
 
@@ -99,13 +123,20 @@ export const useSOSStore = create<SOSState>((set) => ({
     set((s) => ({
       activeSOSEvents: s.activeSOSEvents.filter((e) => e._id !== sosId),
       myActiveSOSId: s.myActiveSOSId === sosId ? null : s.myActiveSOSId,
+      dismissedSOSIds: s.dismissedSOSIds.filter((id) => id !== sosId),
     }));
   },
 
   hydrateFromServer: async () => {
     try {
       const { data } = await api.get<{ sosEvents: SOSEvent[] }>('/sos');
-      set({ activeSOSEvents: data.sosEvents });
+      set((s) => {
+        const activeIds = new Set(data.sosEvents.map((e) => e._id));
+        return {
+          activeSOSEvents: data.sosEvents,
+          dismissedSOSIds: s.dismissedSOSIds.filter((id) => activeIds.has(id)),
+        };
+      });
     } catch (err) {
       console.warn('[SOSStore] Failed to hydrate SOS events:', err);
     }

@@ -119,7 +119,7 @@ export default function Map() {
   const locationsList = Object.values(userLocations);
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-slate-900 pb-16">
+    <div className="flex flex-col h-full min-h-0 bg-slate-900">
       {/* Top bar */}
       <div className="flex items-center gap-2 h-12 px-3 bg-slate-900 border-b border-slate-700 shrink-0">
         <button

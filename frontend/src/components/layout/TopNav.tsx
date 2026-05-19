@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, NavLink as RouterNavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { AppVersion } from '../ui/AppVersion';
 
 export function TopNav() {
   const { currentUser, logout } = useAuth();
@@ -36,6 +37,8 @@ export function TopNav() {
         <NavLink to="/contacts">Contacts</NavLink>
         <NavLink to="/sessions">Sessions</NavLink>
       </nav>
+
+      <AppVersion />
 
       {/* Profile dropdown */}
       <div className="relative shrink-0" ref={profileRef}>

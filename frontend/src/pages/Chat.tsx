@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { TopNav } from '../components/layout/TopNav';
 import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { RightSidebar } from '../components/layout/RightSidebar';
 import { MessageList } from '../components/chat/MessageList';
@@ -125,9 +124,7 @@ export default function Chat() {
   }, []);
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-gray-900 overflow-hidden pb-16">
-      <TopNav />
-
+    <div className="flex flex-col h-full min-h-0 bg-gray-900 overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left sidebar — hidden on small screens while chatting so the message bar is usable */}
         <LeftSidebar mobileHidden={!!activeContext} />
