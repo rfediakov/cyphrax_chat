@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, NavLink as RouterNavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { AppVersion } from '../ui/AppVersion';
+import { NavBarWidgets, NavBarWidgetsEmptyHint } from '../navbar/NavBarWidgets';
 
 export function TopNav() {
   const { currentUser, isGuest, logout } = useAuth();
@@ -32,11 +33,14 @@ export function TopNav() {
       </Link>
 
       {/* Nav links */}
-      <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+      <nav className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
         <NavLink to="/public-rooms">Public Rooms</NavLink>
         <NavLink to="/contacts">Contacts</NavLink>
         <NavLink to="/sessions">Sessions</NavLink>
       </nav>
+
+      <NavBarWidgets />
+      <NavBarWidgetsEmptyHint />
 
       <AppVersion />
 
@@ -70,6 +74,12 @@ export function TopNav() {
               className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
             >
               Profile
+            </button>
+            <button
+              onClick={() => { navigate('/settings', { state: { tab: 'display' } }); setProfileOpen(false); }}
+              className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+            >
+              Navbar widgets
             </button>
             <button
               onClick={() => { navigate('/sessions'); setProfileOpen(false); }}
