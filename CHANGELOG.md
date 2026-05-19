@@ -8,6 +8,36 @@ The single source of truth for the version is the [`/VERSION`](./VERSION) file.
 Run `./scripts/sync-version.sh [new-version]` to propagate it to
 `frontend/package.json`, `backend/package.json`, and `frontend/src/version.ts`.
 
+## [2.4.0] - 2026-05-19
+
+### Added
+- **Custom map markers**: any room member can drop a categorized marker
+  (Pin, Meet here, Hazard, Food, Camp, Photo) on the group map with an
+  optional title and notes. Markers are room-scoped, persisted in MongoDB,
+  and broadcast in real-time over Socket.IO (`marker_created`,
+  `marker_updated`, `marker_deleted`). Owners (and room admins) can delete
+  their markers from the popup.
+- **Interactive map legend** overlaid on the map (top-left). Collapses to a
+  pill on idle and expands into a list with live counts for You, Group
+  members, SOS, and each marker category. Each row toggles visibility of
+  that layer on the map; "Show all / Hide all" shortcut included. Hidden
+  layers persist per-user in `localStorage`.
+- **Add-marker bottom sheet** (`AddMarkerSheet`): mobile-first picker with
+  category chips, title (max 80) and notes (max 500), and accessible
+  focus/keyboard behaviour. Available on both the full Map page and the
+  in-chat `ChatMapPanel` mini-map.
+- **Backend**: `MapMarker` model and `/api/v1/markers` REST surface
+  (`GET ?roomId=…`, `POST`, `PATCH /:id`, `DELETE /:id`) with room
+  membership checks and owner-or-admin delete authorization.
+
+### Changed
+- `GroupMap` now accepts `customMarkers`, `currentUserId`,
+  `onDeleteMarker`, and `hiddenLayers` and renders user/peer/SOS/marker
+  layers conditionally based on the layer-visibility set.
+- The map page replaces the binary "picker mode" with an explicit tool
+  mode (`idle | pin | marker`) so the two place-on-map actions can't
+  collide, and surfaces status hints at the bottom of the viewport.
+
 ## [2.3.0] - 2026-05-19
 
 ### Fixed
