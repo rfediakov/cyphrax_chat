@@ -12,6 +12,8 @@ import { UserProfileModal } from '../modals/UserProfileModal';
 import UserAvatar from '../ui/UserAvatar';
 import type { Room } from '../../store/chat.store';
 import type { Contact } from '../../api/contacts.api';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
+import { getRoomBlueprint } from '../../rooms/registry';
 
 interface RoomMember {
   _id: string;
@@ -103,6 +105,11 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
   const currentUserRole = safeMembers.find((m) => m.userId._id === currentUser?._id)?.role;
   const isAdminOrOwner = currentUserRole === 'admin' || currentUserRole === 'owner';
 
+  // Typed-room widgets — render after the members list. The chat blueprint
+  // ships no widgets, so this stays empty for legacy rooms.
+  const blueprint = activeRoom ? getRoomBlueprint(activeRoom.type) : null;
+  const blueprintWidgets = blueprint?.widgets ?? [];
+
   const owners = safeMembers.filter((m) => m.role === 'owner');
   const admins = safeMembers.filter((m) => m.role === 'admin');
   const regularMembers = safeMembers.filter((m) => m.role === 'member');
@@ -138,40 +145,49 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
         </div>
       </div>
 
-      {/* Members list */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {loadingMembers ? (
-          <div className="flex justify-center py-4">
-            <div className="w-4 h-4 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin" />
-          </div>
-        ) : (
-          <>
-            {owners.length > 0 && (
-              <MemberGroup
-                title="Owner"
-                members={owners}
-                getStatus={getStatus}
-                onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
-              />
-            )}
-            {admins.length > 0 && (
-              <MemberGroup
-                title="Admins"
-                members={admins}
-                getStatus={getStatus}
-                onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
-              />
-            )}
-            {regularMembers.length > 0 && (
-              <MemberGroup
-                title="Members"
-                members={regularMembers}
-                getStatus={getStatus}
-                onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
-              />
-            )}
-          </>
-        )}
+      {/* Members list + typed-room widgets */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-3">
+          {loadingMembers ? (
+            <div className="flex justify-center py-4">
+              <div className="w-4 h-4 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
+              {owners.length > 0 && (
+                <MemberGroup
+                  title="Owner"
+                  members={owners}
+                  getStatus={getStatus}
+                  onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+                />
+              )}
+              {admins.length > 0 && (
+                <MemberGroup
+                  title="Admins"
+                  members={admins}
+                  getStatus={getStatus}
+                  onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+                />
+              )}
+              {regularMembers.length > 0 && (
+                <MemberGroup
+                  title="Members"
+                  members={regularMembers}
+                  getStatus={getStatus}
+                  onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {activeRoomId &&
+          blueprintWidgets.map((Widget, idx) => (
+            <ErrorBoundary key={`${blueprint?.type ?? 'unknown'}-widget-${idx}`}>
+              <Widget roomId={activeRoomId} config={activeRoom?.config} />
+            </ErrorBoundary>
+          ))}
       </div>
 
       {/* Action buttons */}

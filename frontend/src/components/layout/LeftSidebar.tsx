@@ -20,6 +20,10 @@ import type { Contact, PendingFriendRequest } from '../../api/contacts.api';
 import type { Room, Dialog } from '../../store/chat.store';
 import type { PendingInvitation } from '../../api/rooms.api';
 import { findDialogWithUser, getDialogRecordId } from '../../lib/dialogs';
+import { RoomTypePicker } from '../../rooms/components/RoomTypePicker';
+import { RoomTypeBadge } from '../../rooms/components/RoomTypeBadge';
+import { getRoomBlueprint } from '../../rooms/registry';
+import type { RoomType } from '../../rooms/RoomBlueprint';
 
 type PresenceStatus = 'online' | 'afk' | 'offline';
 
@@ -95,8 +99,11 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [type, setType] = useState<RoomType>('chat');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const blueprint = getRoomBlueprint(type);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +111,14 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
     setLoading(true);
     setError('');
     try {
-      const { data } = await createRoom({ name: name.trim(), description: description.trim() || undefined, visibility: isPrivate ? 'private' : 'public' });
+      const { data } = await createRoom({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        visibility: isPrivate ? 'private' : 'public',
+        type,
+        // Seed with the blueprint's defaults; admins can tweak later.
+        config: blueprint.defaultConfig as Record<string, unknown>,
+      });
       onCreated(data.room);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create room';
@@ -116,8 +130,8 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+      <div className="bg-gray-800 border border-gray-700 rounded-xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 sticky top-0 bg-gray-800">
           <h3 className="text-sm font-semibold text-white">Create Room</h3>
           <button
             type="button"
@@ -132,6 +146,11 @@ function CreateRoomModal({ onClose, onCreated }: CreateRoomModalProps) {
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {error && <p className="text-xs text-red-400 bg-red-900/30 rounded px-2 py-1">{error}</p>}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Room type</label>
+            <RoomTypePicker value={type} onChange={setType} />
+            <p className="text-[11px] text-gray-500 mt-1.5">{blueprint.tagline}</p>
+          </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Room name *</label>
             <input
@@ -505,6 +524,8 @@ function RoomRow({
   unread: number;
   onClick: () => void;
 }) {
+  const blueprint = getRoomBlueprint(room.type);
+  const isTyped = blueprint.type !== 'chat';
   return (
     <button
       onClick={onClick}
@@ -512,7 +533,11 @@ function RoomRow({
         active ? 'bg-blue-600/20 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
       }`}
     >
-      <span className="text-gray-500 text-sm shrink-0">#</span>
+      {isTyped ? (
+        <RoomTypeBadge type={room.type} iconOnly className="shrink-0" />
+      ) : (
+        <span className="text-gray-500 text-sm shrink-0">#</span>
+      )}
       <span className="text-sm truncate flex-1">{room.name}</span>
       {unread > 0 && <UnreadBadge count={unread} />}
     </button>

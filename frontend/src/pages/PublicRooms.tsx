@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { getPublicRooms, joinRoom, normalizeRoom } from '../api/rooms.api';
 import { useChatStore } from '../store/chat.store';
 import type { Room } from '../store/chat.store';
+import { RoomTypeBadge } from '../rooms/components/RoomTypeBadge';
+import { getRoomBlueprint } from '../rooms/registry';
 
 const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 20;
@@ -124,17 +126,32 @@ export default function PublicRooms() {
         <div className="space-y-3">
           {rooms.map((room) => {
             const joined = isJoined(room._id);
+            const blueprint = getRoomBlueprint(room.type);
+            const Icon = blueprint.Icon;
             return (
               <div
                 key={room._id}
                 className="flex items-center gap-4 px-4 py-4 bg-gray-900 border border-gray-700 rounded-xl hover:border-gray-600 transition-colors"
               >
-                <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-600/30 flex items-center justify-center shrink-0">
-                  <span className="text-blue-400 font-bold text-sm">#</span>
+                <div
+                  className="w-10 h-10 rounded-xl border flex items-center justify-center shrink-0"
+                  style={{
+                    color: blueprint.accentColor,
+                    backgroundColor: `${blueprint.accentColor}1a`,
+                    borderColor: `${blueprint.accentColor}40`,
+                  }}
+                >
+                  <Icon className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-white truncate">{room.name}</p>
+                    <RoomTypeBadge type={room.type} />
+                    {room.isSystem && (
+                      <span className="shrink-0 text-[10px] px-1.5 py-0.5 bg-gray-700/40 text-gray-400 border border-gray-600/40 rounded font-medium uppercase tracking-wide">
+                        System
+                      </span>
+                    )}
                     {joined && (
                       <span className="shrink-0 text-xs px-1.5 py-0.5 bg-green-600/20 text-green-400 rounded font-medium">
                         Joined

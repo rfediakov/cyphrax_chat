@@ -1,9 +1,10 @@
 import fs from 'fs/promises';
 import { Types } from 'mongoose';
-import { Room } from '../models/room.model.js';
+import { Room, isRoomType, type RoomType } from '../models/room.model.js';
 import { RoomMember } from '../models/roomMember.model.js';
 import { RoomBan } from '../models/roomBan.model.js';
 import { RoomInvitation } from '../models/roomInvitation.model.js';
+import { RoomRole } from '../models/roomRole.model.js';
 import { Message } from '../models/message.model.js';
 import { Attachment } from '../models/attachment.model.js';
 import { User } from '../models/user.model.js';
@@ -43,6 +44,7 @@ export async function deleteRoomCascade(roomId: Types.ObjectId): Promise<void> {
   await RoomMember.deleteMany({ roomId });
   await RoomBan.deleteMany({ roomId });
   await RoomInvitation.deleteMany({ roomId });
+  await RoomRole.deleteMany({ roomId });
   await Room.findByIdAndDelete(roomId);
 }
 
@@ -78,17 +80,43 @@ export async function getPublicRooms(
 // POST /api/v1/rooms
 export async function createRoom(
   ownerId: string,
-  data: { name: string; description?: string; visibility?: 'public' | 'private' },
+  data: {
+    name: string;
+    description?: string;
+    visibility?: 'public' | 'private';
+    type?: RoomType;
+    config?: Record<string, unknown>;
+  },
 ) {
   const ownerObjectId = new Types.ObjectId(ownerId);
-  const { name, description = '', visibility = 'public' } = data;
+  const {
+    name,
+    description = '',
+    visibility = 'public',
+    type: rawType,
+    config: rawConfig,
+  } = data;
+
+  const type: RoomType = rawType && isRoomType(rawType) ? rawType : 'chat';
+  // Stripping prototype keys avoids prototype-pollution if config is user-supplied JSON.
+  const config: Record<string, unknown> =
+    rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+      ? { ...rawConfig }
+      : {};
 
   const existing = await Room.findOne({ name }).lean();
   if (existing) {
     throw new ConflictError('Room name already taken');
   }
 
-  const room = await Room.create({ name, description, visibility, ownerId: ownerObjectId });
+  const room = await Room.create({
+    name,
+    description,
+    visibility,
+    ownerId: ownerObjectId,
+    type,
+    config,
+  });
 
   // Creator becomes a member with implicit 'member' role (owner is tracked via room.ownerId)
   await RoomMember.create({ roomId: room._id, userId: ownerObjectId, role: 'member' });
@@ -109,7 +137,13 @@ export async function getRoom(roomId: string) {
 export async function updateRoom(
   roomId: string,
   userId: string,
-  data: { name?: string; description?: string; visibility?: 'public' | 'private' },
+  data: {
+    name?: string;
+    description?: string;
+    visibility?: 'public' | 'private';
+    type?: RoomType;
+    config?: Record<string, unknown>;
+  },
 ) {
   const room = await Room.findById(roomId);
   if (!room) {
@@ -130,6 +164,18 @@ export async function updateRoom(
 
   if (data.description !== undefined) room.description = data.description;
   if (data.visibility !== undefined) room.visibility = data.visibility;
+  if (data.type !== undefined) {
+    if (!isRoomType(data.type)) {
+      throw new BadRequestError('Invalid room type');
+    }
+    room.type = data.type;
+  }
+  if (data.config !== undefined) {
+    if (typeof data.config !== 'object' || data.config === null || Array.isArray(data.config)) {
+      throw new BadRequestError('config must be an object');
+    }
+    room.config = { ...data.config };
+  }
 
   await room.save();
   return toPublic(room.toObject());
@@ -140,6 +186,12 @@ export async function deleteRoom(roomId: string, userId: string): Promise<void> 
   const room = await Room.findById(roomId).lean();
   if (!room) {
     throw new NotFoundError('Room not found');
+  }
+
+  // System rooms are not deletable by ordinary owners; they're seeded and need
+  // to be torn down through the seed script (or future super-admin tooling).
+  if (room.isSystem) {
+    throw new ForbiddenError('System rooms cannot be deleted');
   }
 
   if (room.ownerId.toString() !== userId) {
@@ -428,6 +480,68 @@ export async function sendInvitation(
     roomName: room.name,
     isPrivate: room.visibility === 'private',
   };
+}
+
+// ── Typed-room roles ────────────────────────────────────────────────────────
+// Type-specific roles (DJ, Net Control, Guardian, …) — assigned by an admin or
+// the room owner, returned to the frontend per-room so widgets can gate
+// affordances on the caller's tags.
+
+export async function assignRoomRole(
+  roomId: string,
+  callerId: string,
+  targetUserId: string,
+  role: string,
+): Promise<void> {
+  const roomObjectId = new Types.ObjectId(roomId);
+  await requireAdminOrOwner(roomObjectId, callerId);
+
+  if (!role || typeof role !== 'string' || role.length > 32) {
+    throw new BadRequestError('Invalid role');
+  }
+
+  await RoomRole.updateOne(
+    { roomId: roomObjectId, userId: new Types.ObjectId(targetUserId), role },
+    { $setOnInsert: { roomId: roomObjectId, userId: new Types.ObjectId(targetUserId), role } },
+    { upsert: true },
+  );
+}
+
+export async function revokeRoomRole(
+  roomId: string,
+  callerId: string,
+  targetUserId: string,
+  role: string,
+): Promise<void> {
+  const roomObjectId = new Types.ObjectId(roomId);
+  await requireAdminOrOwner(roomObjectId, callerId);
+
+  await RoomRole.deleteOne({
+    roomId: roomObjectId,
+    userId: new Types.ObjectId(targetUserId),
+    role,
+  });
+}
+
+export async function getRoomRoles(roomId: string, callerId: string) {
+  const roomObjectId = new Types.ObjectId(roomId);
+
+  // Members can see who plays which role in their room.
+  const member = await RoomMember.findOne({
+    roomId: roomObjectId,
+    userId: new Types.ObjectId(callerId),
+  }).lean();
+  const room = await Room.findById(roomObjectId).lean();
+  if (!room) throw new NotFoundError('Room not found');
+  if (!member && room.ownerId.toString() !== callerId) {
+    throw new ForbiddenError('You are not a member of this room');
+  }
+
+  const roles = await RoomRole.find({ roomId: roomObjectId }).lean();
+  return roles.map((r) => ({
+    userId: String(r.userId),
+    role: r.role,
+  }));
 }
 
 // PUT /api/v1/rooms/:id/invitations/:invId  — accept or reject

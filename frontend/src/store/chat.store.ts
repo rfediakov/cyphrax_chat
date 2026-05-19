@@ -38,6 +38,15 @@ export interface Room {
   owner: string;
   memberCount?: number;
   unreadCount?: number;
+  /**
+   * Typed-room family (`chat`, `radio_mesh`, `fm_tuner`, …). Older backends
+   * may omit this; the registry treats `undefined` as `chat`.
+   */
+  type?: string;
+  /** Free-form per-type configuration blob, edited by admins. */
+  config?: Record<string, unknown>;
+  /** True for system-seeded default rooms. */
+  isSystem?: boolean;
 }
 
 /** GET /dialogs returns `id` and `otherUser.id`; `participants` may be absent. */

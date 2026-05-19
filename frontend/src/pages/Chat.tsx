@@ -12,6 +12,8 @@ import { useTelemetry } from '../hooks/useTelemetry';
 import { useAuthStore } from '../store/auth.store';
 import type { Message } from '../store/chat.store';
 import { findDialogWithUser, getDialogRecordId } from '../lib/dialogs';
+import { getRoomBlueprint } from '../rooms/registry';
+import { RoomTypeBadge } from '../rooms/components/RoomTypeBadge';
 
 function useTypingUsers(contextId: string | null) {
   const [, forceUpdate] = useState(0);
@@ -45,7 +47,12 @@ export default function Chat() {
   const activeContext = (() => {
     if (activeRoomId) {
       const room = rooms.find((r) => r._id === activeRoomId);
-      return { contextId: activeRoomId, contextType: 'room' as const, name: room?.name ?? activeRoomId };
+      return {
+        contextId: activeRoomId,
+        contextType: 'room' as const,
+        name: room?.name ?? activeRoomId,
+        room,
+      };
     }
     if (activeDialogUserId) {
       const dialog = findDialogWithUser(dialogs, activeDialogUserId);
@@ -65,6 +72,13 @@ export default function Chat() {
   const isAdmin = false;
 
   const typingUsers = useTypingUsers(activeContext?.contextId ?? null);
+
+  // Resolve the room blueprint for the active room (or `chat` fallback / null for dialogs).
+  const activeRoom = activeContext?.contextType === 'room' ? activeContext.room : undefined;
+  const blueprint = activeRoom ? getRoomBlueprint(activeRoom.type) : null;
+  const NowStrip = blueprint?.NowStrip;
+  const Composer = blueprint?.Composer;
+  const roomConfig = activeRoom?.config ?? {};
 
   // Close mobile right panel when switching rooms
   useEffect(() => {
@@ -153,6 +167,9 @@ export default function Chat() {
                 </button>
                 <span className="text-gray-400 text-sm">{activeContext.contextType === 'room' ? '#' : '@'}</span>
                 <h1 className="font-semibold text-white text-sm truncate min-w-0">{activeContext.name}</h1>
+                {activeRoom && blueprint && blueprint.type !== 'chat' && (
+                  <RoomTypeBadge type={activeRoom.type} className="shrink-0 hidden sm:inline-flex" />
+                )}
                 <div className="ml-auto flex items-center gap-1 shrink-0">
                   {currentUser && (
                     <span className="text-xs text-gray-500 hidden lg:inline">
@@ -179,6 +196,13 @@ export default function Chat() {
                 </div>
               </div>
 
+              {/* Now strip — typed-room status (current frequency, track, …). */}
+              {activeRoom && NowStrip && (
+                <ErrorBoundary>
+                  <NowStrip roomId={activeRoom._id} config={roomConfig} />
+                </ErrorBoundary>
+              )}
+
               {/* Group map — only meaningful for rooms (dialogs are 1:1 so the
                   full /map page is a better fit there) */}
               {activeContext.contextType === 'room' && (
@@ -197,15 +221,21 @@ export default function Chat() {
                 />
               </ErrorBoundary>
 
-              {/* Input */}
-              <MessageInput
-                contextId={activeContext.contextId}
-                contextType={activeContext.contextType}
-                dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
-                replyTo={replyTo}
-                onClearReply={handleClearReply}
-                socket={socket}
-              />
+              {/* Input — blueprint can replace the default composer with its own. */}
+              {activeRoom && Composer ? (
+                <ErrorBoundary>
+                  <Composer roomId={activeRoom._id} config={roomConfig} />
+                </ErrorBoundary>
+              ) : (
+                <MessageInput
+                  contextId={activeContext.contextId}
+                  contextType={activeContext.contextType}
+                  dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
+                  replyTo={replyTo}
+                  onClearReply={handleClearReply}
+                  socket={socket}
+                />
+              )}
             </>
           ) : (
             <WelcomeScreen />

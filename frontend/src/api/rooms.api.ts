@@ -1,5 +1,6 @@
 import api from './axios';
 import type { Room } from '../store/chat.store';
+import type { RoomType } from '../rooms/RoomBlueprint';
 
 export interface PublicRoomsParams {
   q?: string;
@@ -11,8 +12,10 @@ export interface PublicRoomsResponse {
   total: number;
 }
 
-// The backend returns { id, visibility, ownerId, ... } — normalize to the Room store shape
+// The backend returns { id, visibility, ownerId, type, config, isSystem, ... }
+// — normalize to the Room store shape.
 export function normalizeRoom(raw: Record<string, unknown>): Room {
+  const config = raw.config;
   return {
     _id: (raw.id ?? raw._id) as string,
     name: raw.name as string,
@@ -21,6 +24,12 @@ export function normalizeRoom(raw: Record<string, unknown>): Room {
     owner: (raw.owner ?? raw.ownerId) as string,
     memberCount: raw.memberCount as number | undefined,
     unreadCount: raw.unreadCount as number | undefined,
+    type: (raw.type as string | undefined) ?? 'chat',
+    config:
+      config && typeof config === 'object' && !Array.isArray(config)
+        ? (config as Record<string, unknown>)
+        : {},
+    isSystem: Boolean(raw.isSystem),
   };
 }
 
@@ -28,12 +37,16 @@ export interface CreateRoomPayload {
   name: string;
   description?: string;
   visibility?: 'public' | 'private';
+  type?: RoomType;
+  config?: Record<string, unknown>;
 }
 
 export interface UpdateRoomPayload {
   name?: string;
   description?: string;
   visibility?: 'public' | 'private';
+  type?: RoomType;
+  config?: Record<string, unknown>;
 }
 
 export const getMyRooms = () =>

@@ -13,6 +13,7 @@ import PublicRooms from './pages/PublicRooms';
 import Contacts from './pages/Contacts';
 import Map from './pages/Map';
 import Settings from './pages/Settings';
+import MeshInspector from './pages/MeshInspector';
 import { ToastProvider } from './components/ui/Toast';
 import InstallBanner from './components/pwa/InstallBanner';
 import OfflineBanner from './components/pwa/OfflineBanner';
@@ -227,6 +228,16 @@ export default function App() {
               </RequireAuth>
             }
           />
+          {import.meta.env.DEV && (
+            <Route
+              path="/dev/mesh"
+              element={
+                <RequireAuth>
+                  <MeshInspector />
+                </RequireAuth>
+              }
+            />
+          )}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </AuthBootstrap>
