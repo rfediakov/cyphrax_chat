@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { formatDuration } from '../../lib/mediaRecorder';
+import { useAuthorizedAttachmentBlobUrl } from '../../hooks/useAuthorizedAttachmentBlobUrl';
 
 interface VideoMessageProps {
   src: string;
@@ -13,14 +14,27 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
   const [expanded, setExpanded] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
+  const [decodeError, setDecodeError] = useState(false);
   const [visible, setVisible] = useState(false);
 
-  // Lazy load via IntersectionObserver
+  const { blobUrl: videoBlob, loading: videoAuthLoading, error: videoAuthError } =
+    useAuthorizedAttachmentBlobUrl(visible ? src : undefined);
+  const { blobUrl: thumbBlob } = useAuthorizedAttachmentBlobUrl(
+    visible && thumbnailSrc ? thumbnailSrc : undefined,
+  );
+
+  const error = videoAuthError || decodeError;
+
+  // Lazy load via IntersectionObserver (then fetch blobs with Bearer auth)
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } },
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
       { rootMargin: '200px' },
     );
     observer.observe(containerRef.current);
@@ -28,12 +42,17 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
   }, []);
 
   useEffect(() => {
+    setDecodeError(false);
+    setLoaded(false);
+  }, [videoBlob]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onEnded = () => setPlaying(false);
-    const onError = () => setError(true);
+    const onError = () => setDecodeError(true);
     const onCanPlay = () => setLoaded(true);
 
     video.addEventListener('play', onPlay);
@@ -49,14 +68,18 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
       video.removeEventListener('error', onError);
       video.removeEventListener('canplay', onCanPlay);
     };
-  }, [expanded]);
+  }, [expanded, videoBlob]);
+
+  useEffect(() => {
+    if (!expanded || !videoBlob) return;
+    requestAnimationFrame(() => {
+      videoRef.current?.play().catch(() => setDecodeError(true));
+    });
+  }, [expanded, videoBlob]);
 
   const handleExpand = () => {
+    setVisible(true);
     setExpanded(true);
-    // Start playing after expanding
-    requestAnimationFrame(() => {
-      videoRef.current?.play().catch(() => undefined);
-    });
   };
 
   const togglePlay = () => {
@@ -65,7 +88,7 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
     if (playing) {
       video.pause();
     } else {
-      video.play().catch(() => setError(true));
+      video.play().catch(() => setDecodeError(true));
     }
   };
 
@@ -83,15 +106,14 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
   return (
     <div ref={containerRef} className="mt-1 max-w-xs rounded-xl overflow-hidden border border-gray-600">
       {!expanded ? (
-        // Thumbnail with play overlay
         <button
           onClick={handleExpand}
           className="relative w-full aspect-video bg-gray-800 flex items-center justify-center group"
           aria-label="Play video"
         >
-          {visible && thumbnailSrc ? (
+          {visible && thumbBlob ? (
             <img
-              src={thumbnailSrc}
+              src={thumbBlob}
               alt="Video thumbnail"
               className="w-full h-full object-cover"
             />
@@ -102,7 +124,6 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
               </svg>
             </div>
           )}
-          {/* Play button overlay */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center group-hover:bg-black/75 transition-colors">
               <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
@@ -110,7 +131,6 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
               </svg>
             </div>
           </div>
-          {/* Duration badge */}
           {duration != null && (
             <span className="absolute bottom-1.5 right-1.5 text-xs text-white bg-black/60 px-1.5 py-0.5 rounded tabular-nums">
               {formatDuration(duration)}
@@ -118,17 +138,16 @@ export function VideoMessage({ src, thumbnailSrc, duration }: VideoMessageProps)
           )}
         </button>
       ) : (
-        // Expanded inline video player
         <div className="relative bg-black">
           <video
             ref={videoRef}
-            src={visible ? src : undefined}
+            src={videoBlob ?? undefined}
             className="w-full max-h-64 object-contain"
             playsInline
             controls={loaded}
             onClick={togglePlay}
           />
-          {!loaded && (
+          {(!videoBlob || videoAuthLoading || !loaded) && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/60">
               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
             </div>

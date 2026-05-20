@@ -7,6 +7,7 @@ import { RoomMember } from '../models/roomMember.model.js';
 import { redis } from '../lib/redis.js';
 import { getIo } from '../lib/io.js';
 import { BadRequestError } from '../lib/errors.js';
+import { getGlobalLiveLocations } from '../services/location.service.js';
 
 /**
  * Haversine distance in metres between two lat/lng points.
@@ -88,7 +89,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       heading?: number | null;
       altitude?: number | null;
       roomId?: string | null;
-      source?: 'gps' | 'network' | 'passive';
+      source?: 'gps' | 'network' | 'passive' | 'manual';
     };
 
     if (typeof lat !== 'number' || typeof lng !== 'number') {
@@ -129,12 +130,20 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       await redis.setex(persistKey, 30, '1');
     }
 
+    const io = getIo();
+    const livePoint = { userId, lat, lng, accuracy, speed, heading, updatedAt: Date.now() };
+
     // Emit to room if specified
-    if (roomId) {
-      const io = getIo();
-      if (io) {
-        io.to(`room:${roomId}`).emit('location_batch', [
-          { userId, lat, lng, accuracy, speed, heading, updatedAt: Date.now() },
+    if (roomId && io) {
+      io.to(`room:${roomId}`).emit('location_batch', [livePoint]);
+    }
+
+    // App-wide map channel
+    if (io) {
+      const user = await User.findById(userId).select('username locationSharingActive').lean();
+      if (user?.locationSharingActive) {
+        io.to('app:map').emit('location_batch', [
+          { ...livePoint, username: user.username },
         ]);
       }
     }
@@ -153,7 +162,18 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// GET /live?roomId= — get live locations for a room
+// GET /live/global — live locations for all shareable users (app-wide map)
+router.get('/live/global', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requesterId = req.user!._id;
+    const locations = await getGlobalLiveLocations(requesterId);
+    res.json({ locations });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /live?roomId= — get live locations for a room (excluding self)
 router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const requesterId = req.user!._id;
@@ -163,26 +183,28 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
       return next(new BadRequestError('roomId is required'));
     }
 
-    const members = await RoomMember.find({ roomId: new Types.ObjectId(roomId) }).lean();
+    // Caller must actually be in the room to read its members' positions.
+    const requesterMembership = await RoomMember.findOne({
+      roomId: new Types.ObjectId(roomId),
+      userId: new Types.ObjectId(requesterId),
+    }).lean();
+    if (!requesterMembership) {
+      return next(new BadRequestError('Not a member of this room'));
+    }
+
+    const members = await RoomMember.find({ roomId: new Types.ObjectId(roomId) })
+      .populate<{ userId: { _id: Types.ObjectId; username: string; privacyLocation: string } }>(
+        'userId',
+        '_id username privacyLocation',
+      )
+      .lean();
 
     const locations: unknown[] = [];
 
     for (const m of members) {
-      const uid = m.userId.toString();
+      const uid = m.userId._id.toString();
       if (uid === requesterId) continue;
-
-      // Check privacy settings
-      const user = await User.findById(uid).lean();
-      if (!user) continue;
-      if (user.privacyLocation === 'nobody') continue;
-
-      // For 'contacts' privacy, check mutual friendship (simple: both must be in contacts)
-      // Using a basic check — full contact system can enforce this at service layer
-      if (user.privacyLocation === 'contacts') {
-        // Placeholder: in a full implementation, check ContactModel for mutual relationship
-        // For now, allow if in the same room (room membership implies some trust)
-        // This can be tightened later with the contacts service
-      }
+      if (m.userId.privacyLocation === 'nobody') continue;
 
       const cached = await redis.get(`loc:${uid}`);
       if (!cached) continue;
@@ -197,7 +219,7 @@ router.get('/live', async (req: Request, res: Response, next: NextFunction) => {
         updatedAt: number;
       };
 
-      locations.push({ ...parsed, username: user.username });
+      locations.push({ ...parsed, username: m.userId.username });
     }
 
     res.json({ locations });

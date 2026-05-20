@@ -48,7 +48,24 @@ npm run dev
 
 Set `FRONTEND_URL` in `backend/.env` to the URL Vite prints (often `http://localhost:5173`), not `http://localhost:3000`, when the API runs on the host and the UI runs via `npm run dev`.
 
-The Vite dev proxy is configured for the Docker service name `api`. If you run the API on your machine at `localhost:3001`, point the `/api` and `/socket.io` proxy targets in `frontend/vite.config.ts` at `http://localhost:3001`.
+The Vite dev proxy is configured for the Docker service name `api`. If you run the API on your machine at `localhost:3001`, set `VITE_API_TARGET=http://localhost:3001` (or point the `/api` and `/socket.io` proxy targets in `frontend/vite.config.ts` at `http://localhost:3001`).
+
+### Local HTTPS (PWA features on the phone)
+
+Service workers, push notifications, `getUserMedia` and geolocation only work
+in a secure context. `http://localhost` qualifies, `http://<lan-ip>` does
+not — so testing on a phone normally requires deploying. To unblock that
+locally:
+
+```bash
+./scripts/dev-https-setup.sh      # one-time: install mkcert CA + issue certs
+cd frontend && npm run dev:https  # Vite dev server over HTTPS, bound to LAN
+# or, for the production-like stack:
+./scripts/dev-https.sh
+```
+
+See [`docs/DEV_HTTPS.md`](docs/DEV_HTTPS.md) for the full walkthrough,
+including how to trust the local CA on iOS / Android.
 
 ### Lint and format
 
@@ -74,3 +91,4 @@ Browser (React SPA)
 - [`AGENT_DEVELOPMENT_GUIDE.md`](AGENT_DEVELOPMENT_GUIDE.md) — phased build guide for multi-agent / hackathon workflows  
 - [`docs/DEPLOY_GCP.md`](docs/DEPLOY_GCP.md) — GCP VM deploy, secrets (`deploy/gcp.env`), and bootstrap workflow  
 - [`docs/DEPLOY_HTTPS.md`](docs/DEPLOY_HTTPS.md) — HTTPS domain (`https://safegroup.duckdns.org`), Caddy, DuckDNS  
+- [`docs/DEV_HTTPS.md`](docs/DEV_HTTPS.md) — local HTTPS dev for PWA testing (service worker, push, mic, geolocation) on phones over LAN  

@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/auth.store';
+import { loginAsGuest } from './auth.api';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -14,12 +15,21 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-let isRefreshing = false;
-let refreshQueue: Array<(token: string) => void> = [];
+interface RefreshQueueEntry {
+  resolve: (token: string) => void;
+  reject: (err: unknown) => void;
+}
 
-function processQueue(token: string) {
-  refreshQueue.forEach((cb) => cb(token));
+let isRefreshing = false;
+let refreshQueue: RefreshQueueEntry[] = [];
+
+function flushQueue(token: string | null, err?: unknown) {
+  const pending = refreshQueue;
   refreshQueue = [];
+  for (const entry of pending) {
+    if (token) entry.resolve(token);
+    else entry.reject(err);
+  }
 }
 
 api.interceptors.response.use(
@@ -31,10 +41,14 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        return new Promise((resolve) => {
-          refreshQueue.push((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            resolve(api(originalRequest));
+        return new Promise((resolve, reject) => {
+          refreshQueue.push({
+            resolve: (token) => {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              resolve(api(originalRequest));
+            },
+            // Reject so callers don't hang when the in-flight refresh fails.
+            reject,
           });
         });
       }
@@ -52,12 +66,22 @@ api.interceptors.response.use(
         const newToken = data.accessToken;
         useAuthStore.getState().setAuth(newToken, useAuthStore.getState().user!);
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
-        processQueue(newToken);
+        flushQueue(newToken);
         return api(originalRequest);
-      } catch {
-        useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
-        return Promise.reject(error);
+      } catch (refreshError) {
+        flushQueue(null, refreshError);
+        try {
+          const { data } = await loginAsGuest();
+          useAuthStore
+            .getState()
+            .setAuth(data.accessToken, { ...data.user, isGuest: data.user.isGuest ?? true });
+          originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+          return api(originalRequest);
+        } catch {
+          useAuthStore.getState().clearAuth();
+          window.location.href = '/login';
+          return Promise.reject(refreshError);
+        }
       } finally {
         isRefreshing = false;
       }

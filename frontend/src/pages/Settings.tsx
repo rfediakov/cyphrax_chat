@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { NavbarWidgetsSettings } from '../components/settings/NavbarWidgetsSettings';
 import { useSettingsStore } from '../store/settings.store';
 import {
   getPrivacySettings,
@@ -13,10 +14,11 @@ import {
   type Geofence,
 } from '../api/privacy.api';
 
-type Tab = 'account' | 'privacy' | 'notifications' | 'location' | 'safety' | 'parental';
+type Tab = 'account' | 'display' | 'privacy' | 'notifications' | 'location' | 'safety' | 'parental';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'account', label: 'Account' },
+  { id: 'display', label: 'Display' },
   { id: 'privacy', label: 'Privacy' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'location', label: 'Location' },
@@ -719,8 +721,16 @@ function AccountTab() {
 
 // ─── Main Settings Page ────────────────────────────────────────────────────────
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<Tab>('privacy');
+  const location = useLocation();
+  const initialTab =
+    (location.state as { tab?: Tab } | null)?.tab === 'display' ? 'display' : 'privacy';
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const { settings, loading, setSettings, setLoading } = useSettingsStore();
+
+  useEffect(() => {
+    const tab = (location.state as { tab?: Tab } | null)?.tab;
+    if (tab) setActiveTab(tab);
+  }, [location.state]);
 
   useEffect(() => {
     setLoading(true);
@@ -791,6 +801,7 @@ export default function Settings() {
         ) : (
           <>
             {activeTab === 'account' && <AccountTab />}
+            {activeTab === 'display' && <NavbarWidgetsSettings />}
             {activeTab === 'privacy' && <PrivacyTab restricted={isRestricted} />}
             {activeTab === 'notifications' && <NotificationsTab />}
             {activeTab === 'location' && <LocationTab restricted={isRestricted} />}

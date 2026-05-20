@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, NavLink as RouterNavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { AppVersion } from '../ui/AppVersion';
+import { NavBarWidgets, NavBarWidgetsEmptyHint } from '../navbar/NavBarWidgets';
 
 export function TopNav() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, isGuest, logout } = useAuth();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -32,11 +33,14 @@ export function TopNav() {
       </Link>
 
       {/* Nav links */}
-      <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+      <nav className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
         <NavLink to="/public-rooms">Public Rooms</NavLink>
         <NavLink to="/contacts">Contacts</NavLink>
         <NavLink to="/sessions">Sessions</NavLink>
       </nav>
+
+      <NavBarWidgets />
+      <NavBarWidgetsEmptyHint />
 
       <AppVersion />
 
@@ -50,8 +54,13 @@ export function TopNav() {
           <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
             {currentUser?.username?.slice(0, 2).toUpperCase() ?? '?'}
           </div>
-          <span className="text-sm text-gray-200 hidden sm:block max-w-[100px] truncate">
+          <span className="text-sm text-gray-200 hidden sm:block max-w-[120px] truncate">
             {currentUser?.username}
+            {isGuest && (
+              <span className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-400/90">
+                Guest
+              </span>
+            )}
           </span>
           <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -65,6 +74,12 @@ export function TopNav() {
               className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
             >
               Profile
+            </button>
+            <button
+              onClick={() => { navigate('/settings', { state: { tab: 'display' } }); setProfileOpen(false); }}
+              className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+            >
+              Navbar widgets
             </button>
             <button
               onClick={() => { navigate('/sessions'); setProfileOpen(false); }}

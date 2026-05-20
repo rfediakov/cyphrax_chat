@@ -51,7 +51,10 @@ export function useTelemetry(activeRoomId: string | null) {
       .catch(() => {});
   }, [activeRoomId, bulkSet]);
 
-  // Listen for telemetry_update events from peers
+  // Listen for telemetry_update events from peers.
+  // Without an explicit dependency array this effect runs on every render,
+  // attaching and tearing down the socket listener on every commit. Pin it
+  // to the values it actually depends on.
   useEffect(() => {
     const socket = socketSingleton;
     if (!socket) return;
@@ -64,7 +67,7 @@ export function useTelemetry(activeRoomId: string | null) {
     return () => {
       socket.off('telemetry_update', handleTelemetryUpdate);
     };
-  });
+  }, [upsert]);
 
   // Battery watcher
   useEffect(() => {

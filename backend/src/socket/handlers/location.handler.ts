@@ -4,6 +4,7 @@ import { User } from '../../models/user.model.js';
 import { Location } from '../../models/location.model.js';
 import { RoomMember } from '../../models/roomMember.model.js';
 import { redis } from '../../lib/redis.js';
+import { buildLivePayloadForUser } from '../../services/location.service.js';
 
 interface LocationUpdateData {
   lat?: unknown;
@@ -19,11 +20,13 @@ const batchTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 async function broadcastLocationBatch(io: Server, roomId: string): Promise<void> {
   try {
-    const members = await RoomMember.find({ roomId: new Types.ObjectId(roomId) }).lean();
+    const members = await RoomMember.find({ roomId: new Types.ObjectId(roomId) })
+      .populate<{ userId: { _id: Types.ObjectId; username: string } }>('userId', '_id username')
+      .lean();
     const batch: unknown[] = [];
 
     for (const m of members) {
-      const uid = m.userId.toString();
+      const uid = m.userId._id.toString();
       const cached = await redis.get(`loc:${uid}`);
       if (!cached) continue;
       const parsed = JSON.parse(cached) as {
@@ -35,7 +38,7 @@ async function broadcastLocationBatch(io: Server, roomId: string): Promise<void>
         heading: number | null;
         updatedAt: number;
       };
-      batch.push(parsed);
+      batch.push({ ...parsed, username: m.userId.username });
     }
 
     if (batch.length > 0) {
@@ -91,15 +94,42 @@ export function registerLocationHandler(socket: Socket, io: Server): void {
         await redis.setex(persistKey, 30, '1');
       }
 
-      // Debounce batch broadcast per room (500ms)
+      // Determine which rooms to broadcast to.
+      //  - If the client supplied a specific roomId, only broadcast to that one
+      //    (and only if the user is a member — preventing location spray).
+      //  - Otherwise, fan out to every room the user belongs to so a single
+      //    location update keeps every group's map in sync.
+      const userObjectId = new Types.ObjectId(userId);
+      const roomsToBroadcast: string[] = [];
+
       if (roomId) {
-        const existing = batchTimers.get(roomId);
+        if (!Types.ObjectId.isValid(roomId)) return;
+        const member = await RoomMember.findOne({
+          roomId: new Types.ObjectId(roomId),
+          userId: userObjectId,
+        }).lean();
+        if (!member) return;
+        roomsToBroadcast.push(roomId);
+      } else {
+        const memberships = await RoomMember.find({ userId: userObjectId }).lean();
+        for (const m of memberships) roomsToBroadcast.push(m.roomId.toString());
+      }
+
+      for (const rid of roomsToBroadcast) {
+        const existing = batchTimers.get(rid);
         if (existing) clearTimeout(existing);
         const timer = setTimeout(() => {
-          batchTimers.delete(roomId);
-          void broadcastLocationBatch(io, roomId);
+          batchTimers.delete(rid);
+          void broadcastLocationBatch(io, rid);
         }, 500);
-        batchTimers.set(roomId, timer);
+        batchTimers.set(rid, timer);
+      }
+
+      // Fan out to everyone on the common map (privacy checked on read via REST;
+      // live updates only when sharing is active).
+      const globalPayload = await buildLivePayloadForUser(userId);
+      if (globalPayload) {
+        io.to('app:map').emit('location_batch', [globalPayload]);
       }
     } catch (err) {
       console.error('[LocationHandler] location_update error:', err);

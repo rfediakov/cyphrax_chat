@@ -14,6 +14,11 @@ backend/.env.gcp
 backend/.env.deploy
 deploy/gcp.env
 
+# Local HTTPS development (mkcert-issued certs, see scripts/dev-https-setup.sh)
+frontend/certs/
+deploy/caddy/data/
+deploy/caddy/config/
+
 # Logs
 *.log
 npm-debug.log*

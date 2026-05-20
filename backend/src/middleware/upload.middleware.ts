@@ -32,9 +32,20 @@ const IMAGE_MAX_BYTES = 3 * 1024 * 1024;   // 3 MB
 const AUDIO_MAX_BYTES = 10 * 1024 * 1024;  // 10 MB
 const FILE_MAX_BYTES = 20 * 1024 * 1024;   // 20 MB
 
+// Only accept the 24-char hex ObjectId shape — this prevents callers from
+// supplying values like `../../etc` and escaping the upload directory.
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+function sanitizeContextId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  return OBJECT_ID_RE.test(value) ? value : null;
+}
+
 function contextFolder(req: Request): string {
-  const roomId = (req.body?.roomId as string) || (req.query?.roomId as string);
-  const dialogId = (req.body?.dialogId as string) || (req.query?.dialogId as string);
+  const roomId =
+    sanitizeContextId(req.body?.roomId) ?? sanitizeContextId(req.query?.roomId);
+  const dialogId =
+    sanitizeContextId(req.body?.dialogId) ?? sanitizeContextId(req.query?.dialogId);
   return roomId ?? dialogId ?? 'general';
 }
 

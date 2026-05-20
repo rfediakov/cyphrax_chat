@@ -18,6 +18,7 @@ import {
   NotFoundError,
   UnauthorizedError,
 } from '../lib/errors.js';
+import { NON_LOGINABLE_PASSWORD_HASH } from '../lib/auth.constants.js';
 
 function hashToken(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex');
@@ -32,6 +33,52 @@ function signAccessToken(userId: string, sessionId: string): string {
     expiresIn: config.jwtAccessExpiresIn,
     algorithm: 'HS256',
   });
+}
+
+const DEFAULT_ROOM_NAME = 'Random';
+
+/**
+ * Lookup (or lazily create) the global default "Random" room and ensure the
+ * given user is a member. Every new account is enrolled here so they always
+ * land in a populated group on first login.
+ */
+async function ensureMembershipInDefaultRoom(userId: Types.ObjectId): Promise<void> {
+  let roomId: Types.ObjectId | null = null;
+  const existing = await Room.findOne({ name: DEFAULT_ROOM_NAME }).select('_id').lean();
+  if (existing) {
+    roomId = existing._id as Types.ObjectId;
+  } else {
+    try {
+      const created = await Room.create({
+        name: DEFAULT_ROOM_NAME,
+        description: 'Default public room — say hi to everyone!',
+        visibility: 'public',
+        // The first registrant owns the room. This is fine for a public
+        // gathering space; ownership only governs delete/rename here.
+        ownerId: userId,
+      });
+      roomId = created._id as Types.ObjectId;
+    } catch {
+      // A concurrent registration may have created it first — re-fetch.
+      const reFetched = await Room.findOne({ name: DEFAULT_ROOM_NAME })
+        .select('_id')
+        .lean();
+      roomId = (reFetched?._id as Types.ObjectId | undefined) ?? null;
+    }
+  }
+
+  if (!roomId) return;
+
+  await RoomMember.updateOne(
+    { roomId, userId },
+    {
+      roomId,
+      userId,
+      role: 'member',
+      joinedAt: new Date(),
+    },
+    { upsert: true },
+  );
 }
 
 export async function register(params: {
@@ -55,6 +102,10 @@ export async function register(params: {
 
   const passwordHash = await bcrypt.hash(password, config.bcryptSaltRounds);
   const user = await User.create({ email, username, passwordHash });
+
+  // Auto-enroll new account in the public "Random" room so they always have at
+  // least one populated group to interact with — including a shared map view.
+  await ensureMembershipInDefaultRoom(user._id as Types.ObjectId);
 
   return { id: String(user._id), email: user.email, username: user.username };
 }
@@ -92,6 +143,60 @@ export async function login(
   const accessToken = signAccessToken(String(user._id), String(session._id));
 
   return { accessToken, refreshToken: rawRefreshToken, sessionId: String(session._id) };
+}
+
+/**
+ * Create a throwaway guest account and issue tokens so unauthenticated visitors
+ * can browse public rooms and chat without registering.
+ */
+export async function loginAsGuest(
+  meta: { userAgent?: string; ipAddress?: string },
+): Promise<{
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+  user: { id: string; email: string; username: string; isGuest: true };
+}> {
+  const suffix = crypto.randomBytes(4).toString('hex');
+  const username = `guest_${suffix}`;
+  const email = `guest-${suffix}@guest.safegroup.local`;
+
+  const user = await User.create({
+    email,
+    username,
+    passwordHash: NON_LOGINABLE_PASSWORD_HASH,
+    isGuest: true,
+  });
+
+  await ensureMembershipInDefaultRoom(user._id as Types.ObjectId);
+
+  const rawRefreshToken = generateRefreshToken();
+  const tokenHash = hashToken(rawRefreshToken);
+  const expiresAt = new Date(
+    Date.now() + config.jwtRefreshExpiresInDays * 24 * 60 * 60 * 1000,
+  );
+
+  const session = await Session.create({
+    userId: user._id,
+    tokenHash,
+    userAgent: meta.userAgent,
+    ipAddress: meta.ipAddress,
+    expiresAt,
+  });
+
+  const accessToken = signAccessToken(String(user._id), String(session._id));
+
+  return {
+    accessToken,
+    refreshToken: rawRefreshToken,
+    sessionId: String(session._id),
+    user: {
+      id: String(user._id),
+      email: user.email,
+      username: user.username,
+      isGuest: true as const,
+    },
+  };
 }
 
 export async function logout(sessionId: string): Promise<void> {

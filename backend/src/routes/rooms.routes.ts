@@ -3,9 +3,11 @@ import { Types } from 'mongoose';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import * as roomService from '../services/room.service.js';
 import { createSystemRoomMessage } from '../services/message.service.js';
-import { BadRequestError } from '../lib/errors.js';
+import { BadRequestError, ForbiddenError } from '../lib/errors.js';
 import { getIo } from '../lib/io.js';
 import { RoomMember } from '../models/roomMember.model.js';
+import { isRoomType, type RoomType } from '../models/room.model.js';
+import { RadioFrame } from '../models/radioFrame.model.js';
 import { getPresenceStatuses } from '../presence/presence.manager.js';
 
 /**
@@ -72,16 +74,33 @@ router.get('/invitations/pending', requireAuth, async (req: Request, res: Respon
 // POST /api/v1/rooms
 router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, description, visibility } = req.body as {
+    const { name, description, visibility, type, config } = req.body as {
       name?: string;
       description?: string;
       visibility?: 'public' | 'private';
+      type?: string;
+      config?: Record<string, unknown>;
     };
     if (!name) {
       throw new BadRequestError('name is required');
     }
+    if (type !== undefined && !isRoomType(type)) {
+      throw new BadRequestError('Invalid room type');
+    }
+    if (
+      config !== undefined &&
+      (typeof config !== 'object' || config === null || Array.isArray(config))
+    ) {
+      throw new BadRequestError('config must be an object');
+    }
     const userId = req.user!._id;
-    const room = await roomService.createRoom(userId, { name, description, visibility });
+    const room = await roomService.createRoom(userId, {
+      name,
+      description,
+      visibility,
+      type: type as RoomType | undefined,
+      config,
+    });
     res.status(201).json({ room });
 
     // Join the creator's live sockets to the new room channel so they receive
@@ -107,12 +126,23 @@ router.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
 router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params as { id: string };
-    const { name, description, visibility } = req.body as {
+    const { name, description, visibility, type, config } = req.body as {
       name?: string;
       description?: string;
       visibility?: 'public' | 'private';
+      type?: string;
+      config?: Record<string, unknown>;
     };
-    const room = await roomService.updateRoom(id, req.user!._id, { name, description, visibility });
+    if (type !== undefined && !isRoomType(type)) {
+      throw new BadRequestError('Invalid room type');
+    }
+    const room = await roomService.updateRoom(id, req.user!._id, {
+      name,
+      description,
+      visibility,
+      type: type as RoomType | undefined,
+      config,
+    });
     res.json({ room });
 
     getIo()?.to(`room:${id}`).emit('room_event', { event: 'updated', room });
@@ -335,6 +365,105 @@ router.put(
           io.to(`room:${id}`).emit('message', { message: systemMsg });
         }
       }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── Radio mesh frame log ────────────────────────────────────────────────────
+
+// GET /api/v1/rooms/:id/frames?limit=50 — recent mesh frames in this room
+router.get('/:id/frames', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as { id: string };
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestError('Invalid room id');
+    }
+    const roomObjectId = new Types.ObjectId(id);
+    const userId = req.user!._id;
+
+    // Members only — same gate as `getMembers`.
+    const member = await RoomMember.findOne({
+      roomId: roomObjectId,
+      userId: new Types.ObjectId(userId),
+    }).lean();
+    if (!member) {
+      throw new ForbiddenError('You are not a member of this room');
+    }
+
+    const limit = Math.min(200, Math.max(1, parseInt((req.query.limit as string) ?? '50', 10)));
+    const frames = await RadioFrame.find({ roomId: roomObjectId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({
+      frames: frames.map((f) => ({
+        id: String(f._id),
+        senderUserId: f.senderUserId ? String(f.senderUserId) : null,
+        transportId: f.transportId,
+        transportMeta: f.transportMeta,
+        version: f.version,
+        type: f.type,
+        mid: f.mid,
+        ttl: f.ttl,
+        // base64 over the wire — small, decoder-friendly, no JSON escaping cost.
+        bytesBase64: f.bytes.toString('base64'),
+        decodedPayload: f.decodedPayload,
+        createdAt: f.createdAt,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Typed-room roles (DJ, Net Control, Guardian, …) ─────────────────────────
+
+// GET /api/v1/rooms/:id/roles — list type-specific role tags
+router.get('/:id/roles', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as { id: string };
+    const roles = await roomService.getRoomRoles(id, req.user!._id);
+    res.json({ roles });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/v1/rooms/:id/roles
+router.post('/:id/roles', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params as { id: string };
+    const { userId, role } = req.body as { userId?: string; role?: string };
+    if (!userId || !role) {
+      throw new BadRequestError('userId and role are required');
+    }
+    await roomService.assignRoomRole(id, req.user!._id, userId, role);
+    res.status(201).json({ message: 'Role assigned' });
+    getIo()?.to(`room:${id}`).emit('room_event', { event: 'role_assigned', userId, role, roomId: id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/v1/rooms/:id/roles
+router.delete(
+  '/:id/roles',
+  requireAuth,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params as { id: string };
+      const { userId, role } = req.body as { userId?: string; role?: string };
+      if (!userId || !role) {
+        throw new BadRequestError('userId and role are required');
+      }
+      await roomService.revokeRoomRole(id, req.user!._id, userId, role);
+      res.json({ message: 'Role revoked' });
+      getIo()
+        ?.to(`room:${id}`)
+        .emit('room_event', { event: 'role_revoked', userId, role, roomId: id });
     } catch (err) {
       next(err);
     }

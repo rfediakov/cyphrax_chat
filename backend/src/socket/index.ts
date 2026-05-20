@@ -21,6 +21,8 @@ import { registerLocationHandler } from './handlers/location.handler.js';
 import { registerPttHandler } from './handlers/ptt.handler.js';
 import { registerCallHandler } from './handlers/call.handler.js';
 import { registerSOSHandler } from './handlers/sos.handler.js';
+import { registerRemoteHandler } from './handlers/remote.handler.js';
+import { registerRadioFrameHandler } from './handlers/radioFrame.handler.js';
 
 interface JwtPayload {
   sub: string;
@@ -84,6 +86,9 @@ export function initSocket(httpServer: HttpServer): Server {
       // §5.3.1 — join personal room
       await socket.join(`user:${userId}`);
 
+      // App-wide map channel — live locations for the common map
+      await socket.join('app:map');
+
       // §5.3.2 — join all room channels the user is a member of
       const memberships = await RoomMember.find({ userId }).lean();
       for (const m of memberships) {
@@ -111,6 +116,8 @@ export function initSocket(httpServer: HttpServer): Server {
     registerPttHandler(socket, io);
     registerCallHandler(socket, io);
     registerSOSHandler(socket, io);
+    registerRemoteHandler(socket, io);
+    registerRadioFrameHandler(socket, io);
 
     // Server-side presence evaluation every 30 s per connected socket
     const presenceInterval = setInterval(async () => {

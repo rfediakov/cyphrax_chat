@@ -23,6 +23,7 @@ export interface IUser extends Document {
   email: string;
   username: string;
   passwordHash: string;
+  isGuest: boolean;
   deletedAt: Date | null;
 
   // Location sharing
@@ -87,6 +88,7 @@ const UserSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     username: { type: String, required: true, unique: true, trim: true, immutable: true },
     passwordHash: { type: String, required: true },
+    isGuest: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
 
     // Location sharing
@@ -96,10 +98,10 @@ const UserSchema = new Schema<IUser>(
     locationHistory: { type: Number, default: 30 },
 
     // Privacy settings
-    privacyLocation: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'nobody' },
-    privacyBattery: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'nobody' },
+    privacyLocation: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
+    privacyBattery: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
     privacyOnlineStatus: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
-    privacyLastSeen: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'contacts' },
+    privacyLastSeen: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
     privacyProfile: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
 
     // Notification preferences

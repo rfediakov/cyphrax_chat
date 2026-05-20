@@ -1,0 +1,30 @@
+# Local-development Caddy config. Sits in front of the production frontend
+# container and serves HTTPS using mkcert-issued certs so phones on the LAN
+# can exercise full PWA features (service worker, push, getUserMedia,
+# geolocation) without deploying.
+#
+# Certificates are mounted from ../../frontend/certs/dev.crt|dev.key.
+# Generate them with: ./scripts/dev-https-setup.sh
+
+{
+	# No ACME — we use locally-trusted certs.
+	auto_https off
+}
+
+# Bind to all interfaces on 443 so any name/IP that resolves to this host
+# (localhost, the LAN IP, or safegroup.local from /etc/hosts) reaches us.
+:443 {
+	tls /certs/dev.crt /certs/dev.key
+
+	reverse_proxy frontend:80 {
+		# WebSocket support for socket.io (Caddy forwards Upgrade by default;
+		# explicit headers help when chained through other proxies).
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# Redirect plaintext to HTTPS so links shared without scheme still work.
+:80 {
+	redir https://{host}{uri} permanent
+}

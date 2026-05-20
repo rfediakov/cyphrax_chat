@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../../store/chat.store';
 import { usePresence } from '../../hooks/usePresence';
 import { useAuthStore } from '../../store/auth.store';
@@ -8,8 +9,13 @@ import { getRoom, getMembers, normalizeMember, sendInvitation } from '../../api/
 import { getContacts, normalizeContact } from '../../api/contacts.api';
 import { findDialogWithUser } from '../../lib/dialogs';
 import { ManageRoomModal } from '../modals/ManageRoomModal';
+import { UserProfileModal } from '../modals/UserProfileModal';
+import UserAvatar from '../ui/UserAvatar';
 import type { Room } from '../../store/chat.store';
 import type { Contact } from '../../api/contacts.api';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
+import { getRoomBlueprint } from '../../rooms/registry';
+import { AllUsersPanel } from './AllUsersPanel';
 
 interface RoomMember {
   _id: string;
@@ -37,7 +43,9 @@ interface RightSidebarProps {
 }
 
 export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
+  const navigate = useNavigate();
   const activeRoomId = useChatStore((s) => s.activeRoomId);
+  const setActiveDialog = useChatStore((s) => s.setActiveDialog);
   const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
   const rooms = useChatStore((s) => s.rooms);
   const currentUser = useAuthStore((s) => s.user);
@@ -51,6 +59,7 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
   const [inviting, setInviting] = useState(false);
   const [inviteMsg, setInviteMsg] = useState('');
   const [showManageModal, setShowManageModal] = useState(false);
+  const [profileUser, setProfileUser] = useState<{ id: string; username: string; role?: string } | null>(null);
 
   const membersRefreshToken = useChatStore((s) => s.membersRefreshToken);
   const activeRoom = activeRoomId ? rooms.find((r) => r._id === activeRoomId) : null;
@@ -100,6 +109,11 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
   const currentUserRole = safeMembers.find((m) => m.userId._id === currentUser?._id)?.role;
   const isAdminOrOwner = currentUserRole === 'admin' || currentUserRole === 'owner';
 
+  // Typed-room widgets — render after the members list. The chat blueprint
+  // ships no widgets, so this stays empty for legacy rooms.
+  const blueprint = activeRoom ? getRoomBlueprint(activeRoom.type) : null;
+  const blueprintWidgets = blueprint?.widgets ?? [];
+
   const owners = safeMembers.filter((m) => m.role === 'owner');
   const admins = safeMembers.filter((m) => m.role === 'admin');
   const regularMembers = safeMembers.filter((m) => m.role === 'member');
@@ -110,9 +124,49 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
 
   if (!activeRoomId) {
     return (
-      <aside className="w-56 bg-gray-900 border-l border-gray-700 hidden lg:flex flex-col shrink-0 items-center justify-center">
-        <p className="text-xs text-gray-600 text-center px-4">Select a room or contact to start chatting</p>
-      </aside>
+      <>
+        {isOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+            aria-hidden="true"
+            onClick={onClose}
+          />
+        )}
+        <aside
+          className={`bg-gray-900 border-l border-gray-700 flex-col shrink-0 overflow-hidden
+            ${isOpen ? 'fixed inset-y-0 right-0 z-40 w-72 flex' : 'hidden'}
+            lg:static lg:flex lg:w-56 lg:z-auto`}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0 lg:hidden">
+            <span className="text-sm font-semibold text-white">All users</span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white"
+              aria-label="Close panel"
+            >
+              ✕
+            </button>
+          </div>
+        <div className="p-4 border-b border-gray-700 shrink-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+            People
+          </p>
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            Everyone on SafeGroup. Tap to message; open the map to see who is sharing location.
+          </p>
+        </div>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <AllUsersPanel
+            onSelectUser={(id) => {
+              setActiveDialog(id);
+              navigate('/');
+              onClose?.();
+            }}
+          />
+        </div>
+        </aside>
+      </>
     );
   }
 
@@ -135,25 +189,58 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
         </div>
       </div>
 
-      {/* Members list */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {loadingMembers ? (
-          <div className="flex justify-center py-4">
-            <div className="w-4 h-4 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin" />
-          </div>
-        ) : (
-          <>
-            {owners.length > 0 && (
-              <MemberGroup title="Owner" members={owners} getStatus={getStatus} />
-            )}
-            {admins.length > 0 && (
-              <MemberGroup title="Admins" members={admins} getStatus={getStatus} />
-            )}
-            {regularMembers.length > 0 && (
-              <MemberGroup title="Members" members={regularMembers} getStatus={getStatus} />
-            )}
-          </>
-        )}
+      {/* Members list + typed-room widgets */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-3">
+          {loadingMembers ? (
+            <div className="flex justify-center py-4">
+              <div className="w-4 h-4 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
+              {owners.length > 0 && (
+                <MemberGroup
+                  title="Owner"
+                  members={owners}
+                  getStatus={getStatus}
+                  onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+                />
+              )}
+              {admins.length > 0 && (
+                <MemberGroup
+                  title="Admins"
+                  members={admins}
+                  getStatus={getStatus}
+                  onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+                />
+              )}
+              {regularMembers.length > 0 && (
+                <MemberGroup
+                  title="Members"
+                  members={regularMembers}
+                  getStatus={getStatus}
+                  onSelectMember={(m) => setProfileUser({ id: m.userId._id, username: m.userId.username, role: m.role })}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {activeRoomId &&
+          blueprintWidgets.map((Widget, idx) => (
+            <ErrorBoundary key={`${blueprint?.type ?? 'unknown'}-widget-${idx}`}>
+              <Widget roomId={activeRoomId} config={activeRoom?.config} />
+            </ErrorBoundary>
+          ))}
+
+        <AllUsersPanel
+          compact
+          onSelectUser={(id) => {
+            setActiveDialog(id);
+            navigate('/');
+            onClose?.();
+          }}
+        />
       </div>
 
       {/* Action buttons */}
@@ -261,30 +348,16 @@ export function RightSidebar({ isOpen = false, onClose }: RightSidebarProps) {
           }}
         />
       )}
+
+      {profileUser && (
+        <UserProfileModal
+          userId={profileUser.id}
+          username={profileUser.username}
+          subtitle={profileUser.role}
+          onClose={() => setProfileUser(null)}
+        />
+      )}
     </>
-  );
-}
-
-/** Derive a deterministic hue from a string for the avatar background. */
-function avatarHue(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return Math.abs(hash) % 360;
-}
-
-function UserAvatar({ username, size = 'lg' }: { username: string; size?: 'sm' | 'lg' }) {
-  const hue = avatarHue(username);
-  const initials = username.slice(0, 2).toUpperCase();
-  const dim = size === 'lg' ? 'w-16 h-16 text-xl' : 'w-8 h-8 text-xs';
-  return (
-    <div
-      className={`${dim} rounded-full flex items-center justify-center font-bold text-white select-none shrink-0`}
-      style={{ backgroundColor: `hsl(${hue} 55% 38%)` }}
-    >
-      {initials}
-    </div>
   );
 }
 
@@ -315,6 +388,7 @@ function DMUserPanel({ userId }: { userId: string }) {
   const { getStatus } = usePresence();
   const dialogs = useChatStore((s) => s.dialogs);
   const [contact, setContact] = useState<Contact | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
   const telemetry = useTelemetryStore((s) => s.entries[userId]);
 
   const dialog = findDialogWithUser(dialogs, userId);
@@ -340,19 +414,23 @@ function DMUserPanel({ userId }: { userId: string }) {
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Direct Message</p>
       </div>
 
-      {/* Profile section */}
-      <div className="flex flex-col items-center gap-3 px-4 py-6 border-b border-gray-700 shrink-0">
-        {/* Avatar + presence ring */}
+      {/* Profile section — clickable, opens the full profile modal */}
+      <button
+        type="button"
+        onClick={() => setShowProfile(true)}
+        className="flex flex-col items-center gap-3 px-4 py-6 border-b border-gray-700 shrink-0 hover:bg-gray-800/60 focus:outline-none focus:bg-gray-800/60 transition-colors"
+        aria-label={`Open profile of ${username}`}
+      >
         <div className="relative">
           <UserAvatar username={username} size="lg" />
           <span
             className={`absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full border-2 border-gray-900 ${
               status === 'online' ? 'bg-green-400' : status === 'afk' ? 'bg-amber-400' : 'bg-gray-500'
             }`}
+            aria-hidden="true"
           />
         </div>
 
-        {/* Name + status */}
         <div className="flex flex-col items-center gap-1 w-full min-w-0">
           <span className="text-sm font-bold text-white truncate max-w-full">@{username}</span>
           <span className={`text-xs font-medium ${STATUS_COLOR[status]}`}>
@@ -365,8 +443,17 @@ function DMUserPanel({ userId }: { userId: string }) {
               size="md"
             />
           )}
+          <span className="mt-1 text-[11px] text-blue-400 font-medium">View profile →</span>
         </div>
-      </div>
+      </button>
+
+      {showProfile && (
+        <UserProfileModal
+          userId={userId}
+          username={username}
+          onClose={() => setShowProfile(false)}
+        />
+      )}
 
       {/* Info rows */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -430,10 +517,12 @@ function MemberGroup({
   title,
   members,
   getStatus,
+  onSelectMember,
 }: {
   title: string;
   members: RoomMember[];
   getStatus: (id: string) => PresenceStatus;
+  onSelectMember: (member: RoomMember) => void;
 }) {
   const telemetryEntries = useTelemetryStore((s) => s.entries);
   return (
@@ -443,7 +532,13 @@ function MemberGroup({
         {members.map((m) => {
           const tel = telemetryEntries[m.userId._id];
           return (
-            <div key={m._id} className="flex items-center gap-2 px-1 py-1 rounded">
+            <button
+              type="button"
+              key={m._id}
+              onClick={() => onSelectMember(m)}
+              className="w-full flex items-center gap-2 px-1 py-1 rounded text-left hover:bg-gray-800 focus:outline-none focus:bg-gray-800 focus:ring-1 focus:ring-blue-500 transition-colors"
+              aria-label={`Open profile of ${m.userId.username}`}
+            >
               <PresenceDot status={getStatus(m.userId._id)} />
               <span className="text-xs text-gray-300 truncate flex-1">{m.userId.username}</span>
               {tel?.battery != null && (
@@ -453,7 +548,7 @@ function MemberGroup({
                   size="sm"
                 />
               )}
-            </div>
+            </button>
           );
         })}
       </div>

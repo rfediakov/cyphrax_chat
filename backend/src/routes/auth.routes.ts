@@ -40,7 +40,30 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     setRefreshCookie(res, refreshToken);
     res.status(201).json({
       accessToken,
-      user: { _id: registeredUser.id, email: registeredUser.email, username: registeredUser.username },
+      user: {
+        _id: registeredUser.id,
+        email: registeredUser.email,
+        username: registeredUser.username,
+        isGuest: false,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/v1/auth/guest — anonymous session (no password)
+router.post('/guest', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const meta = {
+      userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
+    };
+    const { accessToken, refreshToken, user } = await authService.loginAsGuest(meta);
+    setRefreshCookie(res, refreshToken);
+    res.status(201).json({
+      accessToken,
+      user: { _id: user.id, email: user.email, username: user.username, isGuest: true },
     });
   } catch (err) {
     next(err);
@@ -61,11 +84,16 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const { accessToken, refreshToken } = await authService.login({ email, password }, meta);
     setRefreshCookie(res, refreshToken);
     const user = await User.findOne({ email: email.toLowerCase(), deletedAt: null })
-      .select('_id email username')
+      .select('_id email username isGuest')
       .lean();
     res.json({
       accessToken,
-      user: { _id: String(user!._id), email: user!.email, username: user!.username },
+      user: {
+        _id: String(user!._id),
+        email: user!.email,
+        username: user!.username,
+        isGuest: user!.isGuest ?? false,
+      },
     });
   } catch (err) {
     next(err);

@@ -3,14 +3,18 @@ import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { RightSidebar } from '../components/layout/RightSidebar';
 import { MessageList } from '../components/chat/MessageList';
 import { MessageInput } from '../components/chat/MessageInput';
+import ChatMapPanel from '../components/chat/ChatMapPanel';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useChatStore } from '../store/chat.store';
 import { useSocket } from '../hooks/useSocket';
 import { typingUsers as typingUsersMap } from '../hooks/useSocket';
 import { useTelemetry } from '../hooks/useTelemetry';
+import { useGlobalLiveLocations } from '../hooks/useGlobalLiveLocations';
 import { useAuthStore } from '../store/auth.store';
 import type { Message } from '../store/chat.store';
 import { findDialogWithUser, getDialogRecordId } from '../lib/dialogs';
+import { getRoomBlueprint } from '../rooms/registry';
+import { RoomTypeBadge } from '../rooms/components/RoomTypeBadge';
 
 function useTypingUsers(contextId: string | null) {
   const [, forceUpdate] = useState(0);
@@ -36,6 +40,7 @@ export default function Chat() {
 
   const { socket } = useSocket();
   useTelemetry(activeRoomId);
+  useGlobalLiveLocations(true);
 
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
@@ -44,7 +49,12 @@ export default function Chat() {
   const activeContext = (() => {
     if (activeRoomId) {
       const room = rooms.find((r) => r._id === activeRoomId);
-      return { contextId: activeRoomId, contextType: 'room' as const, name: room?.name ?? activeRoomId };
+      return {
+        contextId: activeRoomId,
+        contextType: 'room' as const,
+        name: room?.name ?? activeRoomId,
+        room,
+      };
     }
     if (activeDialogUserId) {
       const dialog = findDialogWithUser(dialogs, activeDialogUserId);
@@ -65,6 +75,13 @@ export default function Chat() {
 
   const typingUsers = useTypingUsers(activeContext?.contextId ?? null);
 
+  // Resolve the room blueprint for the active room (or `chat` fallback / null for dialogs).
+  const activeRoom = activeContext?.contextType === 'room' ? activeContext.room : undefined;
+  const blueprint = activeRoom ? getRoomBlueprint(activeRoom.type) : null;
+  const NowStrip = blueprint?.NowStrip;
+  const Composer = blueprint?.Composer;
+  const roomConfig = activeRoom?.config ?? {};
+
   // Close mobile right panel when switching rooms
   useEffect(() => {
     setRightSidebarOpen(false);
@@ -75,12 +92,13 @@ export default function Chat() {
     if (!activeContext) return;
     clearUnread(activeContext.contextId);
     if (socket) {
-      socket.emit('read', {
-        contextId: activeContext.contextId,
-        contextType: activeContext.contextType,
-      });
+      const payload =
+        activeContext.contextType === 'room'
+          ? { roomId: activeContext.contextId }
+          : { dialogId: activeContext.contextId };
+      socket.emit('read', payload);
     }
-  }, [activeContext?.contextId, socket]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeContext?.contextId, activeContext?.contextType, socket]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activity tracking: mouse, keyboard, and page visibility — throttled to 10s
   useEffect(() => {
@@ -151,6 +169,9 @@ export default function Chat() {
                 </button>
                 <span className="text-gray-400 text-sm">{activeContext.contextType === 'room' ? '#' : '@'}</span>
                 <h1 className="font-semibold text-white text-sm truncate min-w-0">{activeContext.name}</h1>
+                {activeRoom && blueprint && blueprint.type !== 'chat' && (
+                  <RoomTypeBadge type={activeRoom.type} className="shrink-0 hidden sm:inline-flex" />
+                )}
                 <div className="ml-auto flex items-center gap-1 shrink-0">
                   {currentUser && (
                     <span className="text-xs text-gray-500 hidden lg:inline">
@@ -177,6 +198,19 @@ export default function Chat() {
                 </div>
               </div>
 
+              {/* Now strip — typed-room status (current frequency, track, …). */}
+              {activeRoom && NowStrip && (
+                <ErrorBoundary>
+                  <NowStrip roomId={activeRoom._id} config={roomConfig} />
+                </ErrorBoundary>
+              )}
+
+              {/* Group map — only meaningful for rooms (dialogs are 1:1 so the
+                  full /map page is a better fit there) */}
+              {activeContext.contextType === 'room' && (
+                <ChatMapPanel roomId={activeContext.contextId} />
+              )}
+
               {/* Messages */}
               <ErrorBoundary key={activeContext.contextId}>
                 <MessageList
@@ -189,18 +223,24 @@ export default function Chat() {
                 />
               </ErrorBoundary>
 
-              {/* Input */}
-              <MessageInput
-                contextId={activeContext.contextId}
-                contextType={activeContext.contextType}
-                dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
-                replyTo={replyTo}
-                onClearReply={handleClearReply}
-                socket={socket}
-              />
+              {/* Input — blueprint can replace the default composer with its own. */}
+              {activeRoom && Composer ? (
+                <ErrorBoundary>
+                  <Composer roomId={activeRoom._id} config={roomConfig} />
+                </ErrorBoundary>
+              ) : (
+                <MessageInput
+                  contextId={activeContext.contextId}
+                  contextType={activeContext.contextType}
+                  dialogUserId={activeContext.contextType === 'dialog' ? activeContext.dialogUserId : undefined}
+                  replyTo={replyTo}
+                  onClearReply={handleClearReply}
+                  socket={socket}
+                />
+              )}
             </>
           ) : (
-            <WelcomeScreen />
+            <WelcomeScreen onBrowsePeople={() => setRightSidebarOpen(true)} />
           )}
         </main>
 
@@ -211,7 +251,7 @@ export default function Chat() {
   );
 }
 
-function WelcomeScreen() {
+function WelcomeScreen({ onBrowsePeople }: { onBrowsePeople?: () => void }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
       <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center mb-4">
@@ -220,9 +260,18 @@ function WelcomeScreen() {
         </svg>
       </div>
       <h2 className="text-lg font-bold text-white mb-2">Welcome to SafeGroup</h2>
-      <p className="text-sm text-gray-400 max-w-xs">
+      <p className="text-sm text-gray-400 max-w-xs mb-4">
         Pick a room or contact to start chatting, or create a new room from the menu.
       </p>
+      {onBrowsePeople && (
+        <button
+          type="button"
+          onClick={onBrowsePeople}
+          className="lg:hidden px-4 py-2 rounded-xl text-sm font-medium bg-gray-800 hover:bg-gray-700 text-cyan-300 border border-gray-700"
+        >
+          See all users
+        </button>
+      )}
     </div>
   );
 }

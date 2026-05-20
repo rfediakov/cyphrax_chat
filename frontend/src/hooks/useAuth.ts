@@ -25,6 +25,12 @@ export function useAuth() {
     [setAuth, navigate]
   );
 
+  const enterGuest = useCallback(async () => {
+    const { data } = await authApi.loginAsGuest();
+    setAuth(data.accessToken, { ...data.user, isGuest: true });
+    navigate('/');
+  }, [setAuth, navigate]);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -40,8 +46,10 @@ export function useAuth() {
     currentUser: user,
     accessToken,
     isAuthenticated: !!accessToken,
+    isGuest: user?.isGuest ?? false,
     login,
     register,
+    enterGuest,
     logout,
   };
 }

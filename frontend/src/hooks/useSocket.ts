@@ -5,6 +5,7 @@ import { useChatStore } from '../store/chat.store';
 import { usePresenceStore } from '../store/presence.store';
 import { useCallsStore } from '../store/calls.store';
 import { useSOSStore, type SOSEvent } from '../store/sos.store';
+import { useMarkerStore, type MapMarker } from '../store/marker.store';
 import { useToast } from '../components/ui/Toast';
 import { fetchPresenceStatuses } from '../api/presence.api';
 
@@ -75,8 +76,9 @@ export function useSocket() {
   const addPendingFriendRequest = useChatStore((s) => s.addPendingFriendRequest);
   const bumpContactsRefresh = useChatStore((s) => s.bumpContactsRefresh);
   const bumpMembersRefresh = useChatStore((s) => s.bumpMembersRefresh);
-  const activeRoomId = useChatStore((s) => s.activeRoomId);
-  const activeDialogUserId = useChatStore((s) => s.activeDialogUserId);
+  // Active context is read via useChatStore.getState() inside the socket
+  // handlers so we always see the latest selection (the effect re-binds only
+  // when accessToken changes).
 
   const setStatus = usePresenceStore((s) => s.setStatus);
   const bulkSetStatuses = usePresenceStore((s) => s.bulkSetStatuses);
@@ -91,6 +93,8 @@ export function useSocket() {
   const addSOSEvent = useSOSStore((s) => s.addSOSEvent);
   const removeSOSEvent = useSOSStore((s) => s.removeSOSEvent);
   const hydrateSOSFromServer = useSOSStore((s) => s.hydrateFromServer);
+  const upsertMarker = useMarkerStore((s) => s.upsertMarker);
+  const removeMarker = useMarkerStore((s) => s.removeMarker);
   const currentUserId = useAuthStore((s) => s.user?._id ?? '');
 
   useEffect(() => {
@@ -165,9 +169,25 @@ export function useSocket() {
 
       appendMessage(contextId, msg as unknown as Parameters<typeof appendMessage>[1]);
 
-      const isActive =
-        contextId === activeRoomId ||
-        (msg.dialogId != null && activeDialogUserId != null);
+      // Read the latest state so we don't rely on the closure values captured at
+      // socket creation time (the effect deps only include `accessToken`).
+      const { activeRoomId: liveRoomId, activeDialogUserId: liveDialogUserId, dialogs } =
+        useChatStore.getState();
+
+      let isActive = false;
+      if (msg.roomId) {
+        isActive = msg.roomId === liveRoomId;
+      } else if (msg.dialogId && liveDialogUserId) {
+        // The active dialog is identified by the *other user's* id; map it back
+        // to a dialog record id so we can compare to the incoming message.
+        const activeDialog = dialogs.find((d) => {
+          if (d.participants?.includes(liveDialogUserId)) return true;
+          const otherId = d.otherUser?._id ?? d.otherUser?.id;
+          return otherId === liveDialogUserId;
+        });
+        const activeDialogId = activeDialog?._id ?? activeDialog?.id;
+        isActive = activeDialogId === msg.dialogId;
+      }
 
       if (!isActive) {
         incrementUnread(contextId);
@@ -326,6 +346,26 @@ export function useSocket() {
       console.error('[SOS] error:', message);
       showToast(`SOS error: ${message}`, 'error');
     });
+
+    // ── Custom map markers ─────────────────────────────────────────────────────
+
+    socket.on('marker_created', (marker: MapMarker) => {
+      upsertMarker(marker);
+      if (marker.userId !== currentUserId) {
+        showToast(`📍 ${marker.username} added a marker`, 'info');
+      }
+    });
+
+    socket.on('marker_updated', (marker: MapMarker) => {
+      upsertMarker(marker);
+    });
+
+    socket.on(
+      'marker_deleted',
+      ({ markerId, roomId }: { markerId: string; roomId: string }) => {
+        removeMarker(roomId, markerId);
+      },
+    );
 
     return () => {
       // Only disconnect if token changes (i.e., this cleanup is for re-connect)

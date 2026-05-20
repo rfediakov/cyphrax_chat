@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { User } from '../models/user.model.js';
 import { BadRequestError, NotFoundError } from '../lib/errors.js';
+import { getPresenceStatuses } from '../presence/presence.manager.js';
 
 const router = Router();
 
@@ -20,9 +21,50 @@ router.get('/me', requireAuth, async (req: Request, res: Response, next: NextFun
       id: String(user._id),
       email: user.email,
       username: user.username,
+      isGuest: user.isGuest ?? false,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Escape characters that have special meaning in a regular expression.
+// Without this, user-supplied queries (e.g. `(a+)+b`) would let callers
+// craft pathological regexes that crash or hang the Mongo query engine.
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// GET /api/v1/users/directory — all other registered users + presence
+router.get('/directory', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requesterId = req.user!._id;
+
+    const users = await User.find({
+      deletedAt: null,
+      isGuest: { $ne: true },
+      _id: { $ne: requesterId },
+    })
+      .select('_id username createdAt')
+      .sort({ username: 1 })
+      .limit(500)
+      .lean();
+
+    const ids = users.map((u) => u._id.toString());
+    const statuses = ids.length > 0 ? await getPresenceStatuses(ids) : {};
+
+    const data = users.map((u) => {
+      const id = u._id.toString();
+      return {
+        id,
+        username: u.username,
+        presence: statuses[id] ?? 'offline',
+      };
+    });
+
+    res.json({ users: data });
   } catch (err) {
     next(err);
   }
@@ -37,18 +79,20 @@ router.get('/search', requireAuth, async (req: Request, res: Response, next: Nex
     }
 
     const users = await User.find({
-      username: { $regex: `^${q}`, $options: 'i' },
+      username: { $regex: `^${escapeRegExp(q)}`, $options: 'i' },
       deletedAt: null,
+      isGuest: { $ne: true },
       _id: { $ne: req.user!._id },
     })
-      .select('username email createdAt')
+      .select('username createdAt')
       .limit(20)
       .lean();
 
+    // Intentionally never expose `email` here — that turns search into a
+    // free email enumeration endpoint.
     const data = users.map((u) => ({
       id: String(u._id),
       username: u.username,
-      email: u.email,
     }));
 
     res.json({ data });

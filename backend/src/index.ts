@@ -9,11 +9,14 @@ import { connectMongo } from './lib/mongo.js';
 import { redis } from './lib/redis.js';
 import { AppError } from './lib/errors.js';
 import { initSocket } from './socket/index.js';
+import { seedDefaultRooms } from './scripts/seedDefaultRooms.js';
 import authRoutes from './routes/auth.routes.js';
 import sessionsRoutes from './routes/sessions.routes.js';
 import usersRoutes from './routes/users.routes.js';
 import contactsRoutes from './routes/contacts.routes.js';
 import roomsRoutes from './routes/rooms.routes.js';
+import fmTunerRoutes from './routes/fmTuner.routes.js';
+import jukeboxRoutes from './routes/jukebox.routes.js';
 import messagesRoutes from './routes/messages.routes.js';
 import dialogsRoutes from './routes/dialogs.routes.js';
 import attachmentsRoutes from './routes/attachments.routes.js';
@@ -25,6 +28,7 @@ import telemetryRoutes from './routes/telemetry.routes.js';
 import callsRoutes from './routes/calls.routes.js';
 import sosRoutes from './routes/sos.routes.js';
 import privacyRoutes from './routes/privacy.routes.js';
+import markersRoutes from './routes/markers.routes.js';
 
 const PKG = (() => {
   try {
@@ -61,6 +65,13 @@ app.use('/api/v1/sessions', sessionsRoutes);
 app.use('/api/v1/users', usersRoutes);
 app.use('/api/v1/contacts', contactsRoutes);
 app.use('/api/v1/rooms', roomsRoutes);
+// FM Tuner widget routes — must be mounted AFTER the generic rooms router so
+// the `/rooms/:id/widgets/fm/...` paths don't get shadowed by the generic
+// `:id` handler. Express matches by exact path, so this works as long as the
+// specific paths come second in declaration order.
+app.use('/api/v1/rooms', fmTunerRoutes);
+// Music Jukebox widget routes — same rationale as the FM Tuner mount above.
+app.use('/api/v1/rooms', jukeboxRoutes);
 // Mount room message routes as sub-routes with mergeParams
 app.use('/api/v1/rooms/:id/messages', messagesRoutes);
 app.use('/api/v1/dialogs', dialogsRoutes);
@@ -73,6 +84,7 @@ app.use('/api/v1/telemetry', telemetryRoutes);
 app.use('/api/v1/calls', callsRoutes);
 app.use('/api/v1/sos', sosRoutes);
 app.use('/api/v1/privacy', privacyRoutes);
+app.use('/api/v1/markers', markersRoutes);
 
 // Global error handler — must be registered after all routes
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
@@ -91,6 +103,15 @@ async function bootstrap() {
   // Trigger Redis connection eagerly so startup logs are visible
   await redis.ping();
   console.log('[Redis] Ping OK');
+
+  // Seed the default typed rooms (idempotent). Disabled via SKIP_ROOM_SEED=1.
+  if (process.env.SKIP_ROOM_SEED !== '1') {
+    try {
+      await seedDefaultRooms();
+    } catch (err) {
+      console.error('[Bootstrap] Default room seed failed:', err);
+    }
+  }
 
   const httpServer = createServer(app);
   initSocket(httpServer);

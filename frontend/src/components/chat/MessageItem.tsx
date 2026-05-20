@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react';
 import type { Message } from '../../store/chat.store';
 import { useAuthStore } from '../../store/auth.store';
+import { useAuthorizedAttachmentBlobUrl } from '../../hooks/useAuthorizedAttachmentBlobUrl';
 import { AudioMessage } from './AudioMessage';
 import { VideoMessage } from './VideoMessage';
+import api from '../../api/axios';
 
 export function SystemMessageItem({ message }: { message: Message }) {
   return (
@@ -33,26 +35,69 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function AttachmentPreview({ attachment }: { attachment: NonNullable<Message['attachments']>[0] }) {
-  const isImage = attachment.mimetype.startsWith('image/');
+function ImageAttachment({ attachment }: { attachment: NonNullable<Message['attachments']>[0] }) {
+  // <img src> can't send Authorization headers, so fetch the file via the
+  // authenticated API client and expose it as a blob: URL.
+  const { blobUrl, loading, error } = useAuthorizedAttachmentBlobUrl(attachment.url);
 
-  if (isImage) {
+  if (loading) {
     return (
-      <a href={attachment.url} target="_blank" rel="noopener noreferrer">
-        <img
-          src={attachment.url}
-          alt={attachment.filename}
-          className="max-w-xs max-h-48 rounded-lg object-cover mt-1 border border-gray-700 hover:opacity-90 transition-opacity"
-          loading="lazy"
-        />
-      </a>
+      <div className="w-32 h-32 mt-1 rounded-lg border border-gray-700 bg-gray-800 flex items-center justify-center">
+        <div className="w-4 h-4 border-2 border-gray-500 border-t-blue-400 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !blobUrl) {
+    return (
+      <div className="mt-1 p-2 bg-gray-700 rounded-lg border border-gray-600 max-w-xs">
+        <p className="text-xs text-red-300">Image unavailable</p>
+        <p className="text-xs text-gray-400 truncate">{attachment.filename}</p>
+      </div>
     );
   }
 
   return (
+    <a href={blobUrl} target="_blank" rel="noopener noreferrer">
+      <img
+        src={blobUrl}
+        alt={attachment.filename}
+        className="max-w-xs max-h-48 rounded-lg object-cover mt-1 border border-gray-700 hover:opacity-90 transition-opacity"
+        loading="lazy"
+      />
+    </a>
+  );
+}
+
+function FileAttachment({ attachment }: { attachment: NonNullable<Message['attachments']>[0] }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      // Bypass axios.baseURL by hitting the absolute API path directly so the
+      // attachment download still goes through the auth interceptor.
+      const reqPath = attachment.url.replace(/^\/api\/v1\//, '');
+      const { data } = await api.get<Blob>(reqPath, { responseType: 'blob' });
+      const objectUrl = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = attachment.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
     <a
       href={attachment.url}
-      download={attachment.filename}
+      onClick={handleDownload}
       className="flex items-center gap-2 mt-1 p-2 bg-gray-700 rounded-lg border border-gray-600 hover:bg-gray-600 transition-colors max-w-xs"
     >
       <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -60,10 +105,17 @@ function AttachmentPreview({ attachment }: { attachment: NonNullable<Message['at
       </svg>
       <div className="min-w-0">
         <p className="text-sm text-gray-200 truncate">{attachment.filename}</p>
-        <p className="text-xs text-gray-400">{formatSize(attachment.size)}</p>
+        <p className="text-xs text-gray-400">
+          {downloading ? 'Downloading…' : formatSize(attachment.size)}
+        </p>
       </div>
     </a>
   );
+}
+
+function AttachmentPreview({ attachment }: { attachment: NonNullable<Message['attachments']>[0] }) {
+  const isImage = attachment.mimetype.startsWith('image/');
+  return isImage ? <ImageAttachment attachment={attachment} /> : <FileAttachment attachment={attachment} />;
 }
 
 function ReplyPreview({ replyTo }: { replyTo: Message }) {
